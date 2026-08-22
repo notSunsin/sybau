@@ -61,7 +61,6 @@ end
 
 local CUSTOM_LOGO = getOrDownloadCustomIcon()
 
--- Deteksi Nama Executor
 local function getExecutorName()
     if identifyexecutor then return identifyexecutor()
     elseif getexecutorname then return getexecutorname()
@@ -85,6 +84,12 @@ local UpgradeSlimeRemote    = RemotesFolder and RemotesFolder:FindFirstChild("Up
 -- ============================================================
 --  GLOBAL STATE & CONFIG
 -- ============================================================
+local RARITY_LIST = {
+    "LIMITED", "Japan", "Icons", "Spain", "Champions", "OG", 
+    "Exclusive", "Divine", "Slime God", "Secret", "Mythic", 
+    "Legendary", "Epic", "Rare", "Common"
+}
+
 local Config = {
     Running         = false,
     PickupWait      = 0.25,
@@ -798,10 +803,10 @@ local flyConnection   = nil
 local moveKeys = { Forward = false, Backward = false, Left = false, Right = false, Up = false, Down = false }
 
 local function startFly()
-    if not LocalPlayer.Character then return end
-    local hrp = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-    local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-    if not hrp or not hum then return end
+    local char = LocalPlayer.Character
+    local hrp  = getHRP()
+    local hum  = char and char:FindFirstChildOfClass("Humanoid")
+    if not char or not hrp or not hum then return end
 
     if flyBodyVelocity then flyBodyVelocity:Destroy() end
     if flyBodyGyro then flyBodyGyro:Destroy() end
@@ -886,7 +891,7 @@ LocalPlayer.CharacterAdded:Connect(function()
 end)
 
 -- ============================================================
---  WINDUI INTERFACE (IDENTIK DENGAN MINE A MOUNTAIN)
+--  WINDUI INTERFACE
 -- ============================================================
 local Window = WindUI:CreateWindow({
     Title         = "CROTTT HUB | Soccer 380",
@@ -996,7 +1001,7 @@ TabInfo:Button({
 local MainSection = Window:Section({ Title = "Fitur Utama" })
 
 -- ============================================================
---  TAB 2: COLLECTOR (AUTO FARM & FILTER RARITY)
+--  TAB 2: COLLECTOR (AUTO FARM & DROPDOWN FILTER RARITY)
 -- ============================================================
 local TabCollect = MainSection:Tab({ Title = "Collector", Icon = "solar:check-square-bold", Border = true })
 
@@ -1055,70 +1060,75 @@ TabCollect:Input({
     end
 })
 
+-- ============================================================
+--  DROPDOWN FILTER BY RARITY (SEARCH BAR + SELECT ALL / REMOVE ALL)
+-- ============================================================
 TabCollect:Section({ Title = "Filter by Rarity (Soccer 380 Codebase)" })
 
-TabCollect:Dropdown({
-    Title  = "Preset Rarity Cepat",
-    Desc   = "Pilih kombinasi filter rarity secara instan",
-    Values = {
-        "⭐ Semua Rarity (ON)",
-        "🔥 High Tier (Japan, Icons, Spain, Champions, OG, LIMITED)",
-        "✨ Japan & Icons Only",
-        "❌ Semua (OFF)"
-    },
-    Value  = "⭐ Semua Rarity (ON)",
-    Callback = function(preset)
-        if preset:find("Semua Rarity") then
-            for k in pairs(Config.EnabledRarities) do Config.EnabledRarities[k] = true end
-        elseif preset:find("Semua %(OFF%)") then
-            for k in pairs(Config.EnabledRarities) do Config.EnabledRarities[k] = false end
-        elseif preset:find("High Tier") then
-            for k in pairs(Config.EnabledRarities) do Config.EnabledRarities[k] = false end
-            Config.EnabledRarities["Japan"]     = true
-            Config.EnabledRarities["Icons"]     = true
-            Config.EnabledRarities["Spain"]     = true
-            Config.EnabledRarities["Champions"] = true
-            Config.EnabledRarities["OG"]        = true
-            Config.EnabledRarities["LIMITED"]   = true
-            Config.EnabledRarities["Exclusive"] = true
-        elseif preset:find("Japan & Icons") then
-            for k in pairs(Config.EnabledRarities) do Config.EnabledRarities[k] = false end
-            Config.EnabledRarities["Japan"] = true
-            Config.EnabledRarities["Icons"] = true
-            Config.EnabledRarities["Spain"] = true
+local RarityDropdown = nil
+
+-- Tombol Cepat: Select All (Kiri) & Remove All (Kanan)
+TabCollect:Button({
+    Title    = "✅ Select All (Pilih Semua)",
+    Desc     = "Centang seluruh rarity lucky block sekaligus",
+    Callback = function()
+        if RarityDropdown and RarityDropdown.Select then
+            RarityDropdown:Select(RARITY_LIST)
         end
+        for _, r in ipairs(RARITY_LIST) do
+            Config.EnabledRarities[r] = true
+        end
+        WindUI:Notify({
+            Title    = "Filter Rarity",
+            Content  = "Semua Rarity Berhasil Dipilih (Select All)",
+            Duration = 2
+        })
     end
 })
 
--- Toggle Individual Rarity Lengkap Codebase Soccer 380
-local SoccerRarities = {
-    { id = "LIMITED",   name = "LIMITED Lucky Block",   desc = "Tier 15 | Limited Edition" },
-    { id = "Japan",     name = "Japan Lucky Block",     desc = "Tier 14 | Sangat Langka" },
-    { id = "Icons",     name = "Icons Lucky Block",     desc = "Tier 13 | Golden Icon" },
-    { id = "Spain",     name = "Spain Lucky Block",     desc = "Tier 12 | Champions Tier" },
-    { id = "Champions", name = "Champions Lucky Block", desc = "Tier 11 | World Class" },
-    { id = "OG",        name = "OG Lucky Block",        desc = "Tier 10 | Original Block" },
-    { id = "Exclusive", name = "Exclusive Lucky Block", desc = "Tier 9 | US & Exclusive" },
-    { id = "Divine",    name = "Divine Lucky Block",    desc = "Tier 8 | Divine Slime" },
-    { id = "Slime God", name = "Slime God Lucky Block", desc = "Tier 7 | Godly Slime" },
-    { id = "Secret",    name = "Secret Lucky Block",    desc = "Tier 6 | Cosmic Block" },
-    { id = "Mythic",    name = "Mythic Lucky Block",    desc = "Tier 5 | Poison Block" },
-    { id = "Legendary", name = "Legendary Lucky Block", desc = "Tier 4 | 67 Block" },
-    { id = "Epic",      name = "Epic Lucky Block",      desc = "Tier 3 | Ghost Block" },
-    { id = "Rare",      name = "Rare Lucky Block",      desc = "Tier 2 | Volcanic Block" },
-    { id = "Common",    name = "Common Lucky Block",    desc = "Tier 1 | Water Block" },
-}
-
-for _, rInfo in ipairs(SoccerRarities) do
-    TabCollect:Toggle({
-        Title    = rInfo.name,
-        Desc     = rInfo.desc,
-        Value    = Config.EnabledRarities[rInfo.id] == true,
-        Callback = function(st)
-            Config.EnabledRarities[rInfo.id] = st
+TabCollect:Button({
+    Title    = "❌ Remove All (Hapus Semua)",
+    Desc     = "Kosongkan semua centang rarity lucky block",
+    Callback = function()
+        if RarityDropdown and RarityDropdown.Select then
+            RarityDropdown:Select({})
         end
-    })
-end
+        for _, r in ipairs(RARITY_LIST) do
+            Config.EnabledRarities[r] = false
+        end
+        WindUI:Notify({
+            Title    = "Filter Rarity",
+            Content  = "Semua Rarity Berhasil Dikosongkan (Remove All)",
+            Duration = 2
+        })
+    end
+})
+
+-- Dropdown Rarity dengan Search Bar bawaan WindUI
+RarityDropdown = TabCollect:Dropdown({
+    Title       = "Pilih Rarity Lucky Block",
+    Desc        = "Gunakan Search Bar di atas untuk mencari & centang rarity yang diinginkan",
+    Values      = RARITY_LIST,
+    Value       = { "Japan", "Icons", "Spain" },
+    Multi       = true,
+    AllowNone   = true,
+    Callback    = function(selected)
+        for _, r in ipairs(RARITY_LIST) do
+            Config.EnabledRarities[r] = false
+        end
+        if type(selected) == "table" then
+            for k, v in pairs(selected) do
+                if type(k) == "string" and v == true then
+                    Config.EnabledRarities[k] = true
+                elseif type(v) == "string" then
+                    Config.EnabledRarities[v] = true
+                end
+            end
+        elseif type(selected) == "string" then
+            Config.EnabledRarities[selected] = true
+        end
+    end
+})
 
 -- ============================================================
 --  TAB 3: STATS & SESI
