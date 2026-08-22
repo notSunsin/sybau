@@ -1,39 +1,17 @@
 -- ============================================================
 --  CROTTT HUB | SOCCER 380 (TikTok Logo Edition)
---  [1] AUTO FARM LUCKY BLOCKS (FILTER MULTI-SELECT DROPDOWN)
---  [2] AUTO COLLECT EARNINGS (PLOT 1 - 50)
---  [3] AUTO UPGRADE JUMP (+1, +5, +10, AUTO ALL + SMART COIN)
---  [4] AUTO UPGRADE SOCCER PLAYER (SLIME UPGRADE PLOT 1-50)
---  [5] PLAYER (DISABLE NOTIFIKASI GAME, WALKSPEED, FLYHIGH)
 -- ============================================================
 
--- 1. CEK SINGLE EXECUTION (Mencegah GUI Tumpuk)
-if _G.CrotttSoccerRunning then
-    pcall(function()
-        if _G.CrotttSoccerWindow then
-            _G.CrotttSoccerWindow:Destroy()
-        end
-        local oldBtn = game:GetService("Players").LocalPlayer.PlayerGui:FindFirstChild("CROTTT_SoccerFloatingBtn")
-        if oldBtn then oldBtn:Destroy() end
-    end)
-end
-_G.CrotttSoccerRunning = true
-
--- 2. LOADER WINDUI DENGAN CLONEREF & MULTI-FALLBACK
+-- 1. LOADER WINDUI DENGAN CLONEREF & MULTI-FALLBACK
 local cloneref = (cloneref or clonereference or function(instance)
     return instance
 end)
-
 local ReplicatedStorage = cloneref(game:GetService("ReplicatedStorage"))
 local RunService        = cloneref(game:GetService("RunService"))
 local Players           = cloneref(game:GetService("Players"))
 local Workspace         = cloneref(game:GetService("Workspace"))
 local UserInputService  = cloneref(game:GetService("UserInputService"))
 local StarterGui        = cloneref(game:GetService("StarterGui"))
-local TweenService      = cloneref(game:GetService("TweenService"))
-
-local LocalPlayer = Players.LocalPlayer
-local ScriptStartTime = os.time()
 
 local WindUI = nil
 local loaderUrls = {
@@ -57,10 +35,13 @@ if not WindUI then
     return
 end
 
--- 3. TIKTOK LOGO LOADER DENGAN CACHE EXECUTOR
+local LocalPlayer = Players.LocalPlayer
+local ScriptStartTime = os.time()
+
+-- 2. TIKTOK LOGO LOADER DENGAN CACHE EXECUTOR
 local function getOrDownloadCustomIcon()
     local pngUrl = "https://cdn-icons-png.flaticon.com/512/361/361468.png"
-    local fileName = "crottt_tiktok_logo.png"
+    local fileName = "logo-hub_logo.png"
     
     if writefile and getcustomasset then
         pcall(function()
@@ -80,14 +61,15 @@ end
 
 local CUSTOM_LOGO = getOrDownloadCustomIcon()
 
+-- Deteksi Nama Executor
 local function getExecutorName()
     if identifyexecutor then return identifyexecutor()
     elseif getexecutorname then return getexecutorname()
-    else return "Universal / Unknown" end
+    else return "Potassium / Universal" end
 end
 
 -- ============================================================
---  REMOTES DISCOVERY
+--  REMOTES DISCOVERY & SETUP
 -- ============================================================
 local RemotesFolder = ReplicatedStorage
     :WaitForChild("SharedModules", 10)
@@ -101,21 +83,23 @@ local CollectEarningsRemote = RemotesFolder and RemotesFolder:FindFirstChild("Co
 local UpgradeSlimeRemote    = RemotesFolder and RemotesFolder:FindFirstChild("Upgrade Slime")
 
 -- ============================================================
---  GLOBAL STATE & CONFIGURATIONS
+--  GLOBAL STATE & CONFIG
 -- ============================================================
-local FarmConfig = {
+local Config = {
     Running         = false,
-    LoopDelay       = 0.5,
     PickupWait      = 0.25,
     PlaceWait       = 0.35,
+    CollectDelay    = 0.5,
+    LimitEnabled    = false,
+    LimitAmount     = 50,
     MaxCarry        = 50,
     EnabledRarities = {
+        ["LIMITED"]   = false,
         ["Japan"]     = true,
         ["Icons"]     = true,
         ["Spain"]     = true,
         ["Champions"] = false,
         ["OG"]        = false,
-        ["LIMITED"]   = false,
         ["Exclusive"] = false,
         ["Divine"]    = false,
         ["Slime God"] = false,
@@ -125,7 +109,7 @@ local FarmConfig = {
         ["Epic"]      = false,
         ["Rare"]      = false,
         ["Common"]    = false,
-    },
+    }
 }
 
 local EarningsConfig = {
@@ -161,21 +145,23 @@ local PlayerConfig = {
     FlySpeed             = 60,
 }
 
-local Stats = {
-    SessionStartTime = nil,
-    FarmBlocksCount  = 0,
-    LastBlockName    = "-",
-    LastBlockRarity  = "-",
-    StatusText       = "IDLE (Siap)",
+local ResetState = {
+    ResetCooldown = false,
 }
 
--- ============================================================
---  RARITY DATA & MAPPING
--- ============================================================
-local RARITY_LIST = {
-    "Japan", "Icons", "Spain", "Champions", "OG", 
-    "LIMITED", "Exclusive", "Divine", "Slime God", 
-    "Secret", "Mythic", "Legendary", "Epic", "Rare", "Common"
+local Stats = {
+    TotalCollected      = 0,
+    LastCollected       = "-",
+    LastRarity          = "-",
+    StatusText          = "IDLE (Siap)",
+    SessionStartTime    = nil,
+    SessionCollected    = 0,
+    CollectedByRarity   = {
+        ["LIMITED"] = 0, ["Japan"] = 0, ["Icons"] = 0, ["Spain"] = 0,
+        ["Champions"] = 0, ["OG"] = 0, ["Exclusive"] = 0, ["Divine"] = 0,
+        ["Slime God"] = 0, ["Secret"] = 0, ["Mythic"] = 0, ["Legendary"] = 0,
+        ["Epic"] = 0, ["Rare"] = 0, ["Common"] = 0
+    }
 }
 
 local RARITY_ORDER = {
@@ -221,6 +207,8 @@ local BLOCK_NAME_TO_RARITY = {
     ["Japan Lucky Block"]     = "Japan",
 }
 
+_G.SoccerCollectLogs = _G.SoccerCollectLogs or {}
+
 -- ============================================================
 --  HELPER: CASH & NUMBER PARSER
 -- ============================================================
@@ -229,27 +217,27 @@ local SUFFIXES = {
     sx = 1e21, sp = 1e24, oc = 1e27, n = 1e30, dc = 1e33
 }
 
-local function parseSuffixedNumber(str)
-    if type(str) == "number" then return str end
-    if type(str) ~= "string" then return 0 end
-    local clean = str:gsub("[$,%s]", ""):lower()
-    local numStr, suf = clean:match("^([%d%.]+)%s*([a-z]*)$")
-    if not numStr then return 0 end
-    local val = tonumber(numStr) or 0
-    if suf and suf ~= "" and SUFFIXES[suf] then
-        return val * SUFFIXES[suf]
+local function parseSuffixNumber(str)
+    if not str then return 0 end
+    local clean = tostring(str):gsub(",", ""):gsub("%+", ""):gsub("%%", ""):gsub("%$", ""):gsub("%s+", ""):lower()
+    local num, suffix = clean:match("^([%d%.]+)([a-z]*)$")
+    if not num then return tonumber(clean) or 0 end
+    local val = tonumber(num) or 0
+    if suffix and suffix ~= "" and SUFFIXES[suffix] then
+        val = val * SUFFIXES[suffix]
     end
     return val
 end
 
-local function formatNumberShort(num)
-    if not num or num == 0 then return "$0" end
-    if num >= 1e15 then return string.format("$%.2fQa", num / 1e15) end
-    if num >= 1e12 then return string.format("$%.2fT",  num / 1e12) end
-    if num >= 1e9  then return string.format("$%.2fB",  num / 1e9)  end
-    if num >= 1e6  then return string.format("$%.2fM",  num / 1e6)  end
-    if num >= 1e3  then return string.format("$%.2fK",  num / 1e3)  end
-    return string.format("$%d", math.floor(num))
+local function formatSuffixNumber(val)
+    local n = tonumber(val) or 0
+    if n >= 1e18 then return string.format("$%.2fQi", n / 1e18)
+    elseif n >= 1e15 then return string.format("$%.2fQa", n / 1e15)
+    elseif n >= 1e12 then return string.format("$%.2fT", n / 1e12)
+    elseif n >= 1e9 then return string.format("$%.2fB", n / 1e9)
+    elseif n >= 1e6 then return string.format("$%.2fM", n / 1e6)
+    elseif n >= 1e3 then return string.format("$%.1fK", n / 1e3)
+    else return "$" .. tostring(math.floor(n)) end
 end
 
 local function getPlayerCash()
@@ -272,7 +260,7 @@ local function getPlayerCash()
             if obj:IsA("TextLabel") and obj.Visible then
                 local txt = obj.Text
                 if txt:match("^%$%s*[%d%.]+%s*[A-Za-z]*$") then
-                    local parsed = parseSuffixedNumber(txt)
+                    local parsed = parseSuffixNumber(txt)
                     if parsed > 0 then return parsed end
                 end
             end
@@ -282,7 +270,7 @@ local function getPlayerCash()
 end
 
 -- ============================================================
---  JUMP PRICING FORMULA
+--  JUMP PRICING CALCULATION
 -- ============================================================
 local BASE_PRICE = 260
 local GROWTH_PER_LEVEL = 1.082
@@ -333,7 +321,7 @@ local function getPriceForTier(tierCode)
                     if pParent then
                         for _, child in ipairs(pParent:GetChildren()) do
                             if child:IsA("TextLabel") and child.Text:find("%+" .. amount) then
-                                return parseSuffixedNumber(txt)
+                                return parseSuffixNumber(txt)
                             end
                         end
                     end
@@ -341,7 +329,6 @@ local function getPriceForTier(tierCode)
             end
         end
     end
-
     local curLevel = getPlayerJumpLevel()
     return calcBulkPrice(curLevel, amount)
 end
@@ -455,16 +442,14 @@ local function getActiveBaseSlots()
 end
 
 -- ============================================================
---  DISABLE NOTIFICATIONS SYSTEM
+--  DISABLE NOTIFICATIONS
 -- ============================================================
 local notifKeywords = { "notif", "notify", "notification", "alert", "announcement", "banner", "toast", "messagebox", "popup" }
 
 local function isNotificationGui(obj)
     local name = obj.Name:lower()
     for _, kw in ipairs(notifKeywords) do
-        if name:find(kw) then
-            return true
-        end
+        if name:find(kw) then return true end
     end
     return false
 end
@@ -536,10 +521,6 @@ local function startSoccerUpgradeLoop()
     end)
 end
 
-local function stopSoccerUpgradeLoop()
-    SoccerConfig.Running = false
-end
-
 -- ============================================================
 --  CORE LOGIC: COLLECT EARNINGS
 -- ============================================================
@@ -570,10 +551,6 @@ local function startEarningsLoop()
     end)
 end
 
-local function stopEarningsLoop()
-    EarningsConfig.Running = false
-end
-
 -- ============================================================
 --  CORE LOGIC: AUTO FARM LUCKY BLOCKS
 -- ============================================================
@@ -585,7 +562,7 @@ local function getLuckyBlocks()
         if not obj:IsA("Model") then continue end
         local rarityId = BLOCK_NAME_TO_RARITY[obj.Name]
         if not rarityId then continue end
-        if not FarmConfig.EnabledRarities[rarityId] then continue end
+        if not Config.EnabledRarities[rarityId] then continue end
         local rootPart = obj:FindFirstChild("RootPart")
                       or obj.PrimaryPart
                       or obj:FindFirstChildOfClass("BasePart")
@@ -608,120 +585,146 @@ local function getLuckyBlocks()
     return results
 end
 
-local function runFarmCycle()
+local isCollecting = false
+local function collectCycle()
+    if isCollecting or not Config.Running then return end
+    isCollecting = true
+
     if not isAlive() then
-        waitRespawn(15); task.wait(1); return
+        waitRespawn(15); task.wait(1); isCollecting = false; return
     end
 
     local invCount = LocalPlayer.Character
         and LocalPlayer.Character:GetAttribute("LuckyBlockCount") or 0
-    if invCount >= FarmConfig.MaxCarry then
-        FarmConfig.Running = false
-        Stats.StatusText = "Inventory Penuh (50/50)"
-        WindUI:Notify({
-            Title = "Inventory Penuh!",
-            Content = ("Batas %d Lucky Block tercapai. Auto Farm berhenti."):format(FarmConfig.MaxCarry),
-            Duration = 5
-        })
+    if invCount >= Config.MaxCarry then
+        Config.Running = false
+        Stats.StatusText = "INVENTORY PENUH (50/50)"
+        pcall(function()
+            StarterGui:SetCore("SendNotification", {
+                Title = "Inventory Penuh!",
+                Text = "Batas 50 Lucky Block tercapai. Auto Farm berhenti!",
+                Duration = 5
+            })
+        end)
+        isCollecting = false
+        return
+    end
+
+    if Config.LimitEnabled and Stats.SessionCollected >= Config.LimitAmount then
+        Config.Running = false
+        Stats.StatusText = string.format("LIMIT TERCAPAI (%d/%d)", Stats.SessionCollected, Config.LimitAmount)
+        pcall(function()
+            StarterGui:SetCore("SendNotification", {
+                Title = "Auto Farm Selesai!",
+                Text = string.format("Limit %d Lucky Block tercapai!", Config.LimitAmount),
+                Duration = 4
+            })
+        end)
+        isCollecting = false
         return
     end
 
     local blocks = getLuckyBlocks()
-    if #blocks == 0 then
-        Stats.StatusText = "Menunggu Lucky Block Spawn..."
-        return
-    end
+    if #blocks > 0 then
+        local target = blocks[1]
+        local hrp    = getHRP()
+        if hrp then
+            Stats.StatusText = ("Teleport ke: %s [%s]"):format(target.model.Name, target.rarity)
+            hrp.CFrame = target.rootPart.CFrame * CFrame.new(0, 0.5, 0)
+            pcall(function()
+                hrp.AssemblyLinearVelocity  = Vector3.zero
+                hrp.AssemblyAngularVelocity = Vector3.zero
+            end)
+            task.wait(Config.PickupWait)
 
-    local target = blocks[1]
-    local hrp    = getHRP()
-    if not hrp then return end
+            if target.model.Parent then
+                local pickedUp    = false
+                local pickupStart = tick()
+                while (tick() - pickupStart) < 2.0 and target.model.Parent and Config.Running do
+                    if PickupSlimeRemote then
+                        pcall(function() PickupSlimeRemote:FireServer(target.model) end)
+                        pcall(function() PickupSlimeRemote:FireServer(target.rootPart) end)
+                        pcall(function() PickupSlimeRemote:FireServer(target.model.Name) end)
+                    end
+                    for _, p in ipairs(Workspace:GetDescendants()) do
+                        if p:IsA("ProximityPrompt") and p.Enabled then
+                            local pParent = p.Parent
+                            if pParent and (
+                                pParent:IsDescendantOf(target.model)
+                                or (hrp.Position - pParent.Position).Magnitude <= 10
+                            ) then
+                                p.HoldDuration           = 0
+                                p.MaxActivationDistance  = 999999
+                                p.RequiresLineOfSight    = false
+                                if typeof(fireproximityprompt) == "function" then
+                                    pcall(function() fireproximityprompt(p, 0) end)
+                                end
+                            end
+                        end
+                    end
+                    task.wait(0.12)
+                    if isHoldingSlime() or (not target.model.Parent) then
+                        pickedUp = true; break
+                    end
+                end
 
-    Stats.StatusText = ("Teleport ke: %s [%s]"):format(target.model.Name, target.rarity)
-    hrp.CFrame = target.rootPart.CFrame * CFrame.new(0, 0.5, 0)
-    pcall(function()
-        hrp.AssemblyLinearVelocity  = Vector3.zero
-        hrp.AssemblyAngularVelocity = Vector3.zero
-    end)
-    task.wait(FarmConfig.PickupWait)
+                if pickedUp then
+                    Stats.StatusText = "Membawa ke Base Plot..."
+                    task.wait(0.15)
+                    local baseCF = findPlayerBase()
+                    if baseCF then
+                        hrp.CFrame = baseCF + Vector3.new(0, 3.5, 0)
+                        pcall(function()
+                            hrp.AssemblyLinearVelocity  = Vector3.zero
+                            hrp.AssemblyAngularVelocity = Vector3.zero
+                        end)
+                        task.wait(Config.PlaceWait)
 
-    if not target.model.Parent then return end
+                        local depositStart = tick()
+                        while (tick() - depositStart) < 1.5 and Config.Running do
+                            if PlaceSlimeRemote then
+                                pcall(function() PlaceSlimeRemote:FireServer() end)
+                                pcall(function() PlaceSlimeRemote:FireServer(target.model) end)
+                            end
+                            task.wait(0.15)
+                            if not isHoldingSlime() then break end
+                        end
 
-    local pickedUp    = false
-    local pickupStart = tick()
-    while (tick() - pickupStart) < 2.0 and target.model.Parent and FarmConfig.Running do
-        if PickupSlimeRemote then
-            pcall(function() PickupSlimeRemote:FireServer(target.model) end)
-            pcall(function() PickupSlimeRemote:FireServer(target.rootPart) end)
-            pcall(function() PickupSlimeRemote:FireServer(target.model.Name) end)
-        end
-        for _, p in ipairs(Workspace:GetDescendants()) do
-            if p:IsA("ProximityPrompt") and p.Enabled then
-                local pParent = p.Parent
-                if pParent and (
-                    pParent:IsDescendantOf(target.model)
-                    or (hrp.Position - pParent.Position).Magnitude <= 10
-                ) then
-                    p.HoldDuration           = 0
-                    p.MaxActivationDistance  = 999999
-                    p.RequiresLineOfSight    = false
-                    if typeof(fireproximityprompt) == "function" then
-                        pcall(function() fireproximityprompt(p, 0) end)
+                        Stats.TotalCollected = Stats.TotalCollected + 1
+                        Stats.SessionCollected = Stats.SessionCollected + 1
+                        Stats.LastCollected = target.model.Name
+                        Stats.LastRarity = target.rarity
+                        Stats.CollectedByRarity[target.rarity] = (Stats.CollectedByRarity[target.rarity] or 0) + 1
+
+                        local logMsg = string.format("[%s] %s (Total: %d)", target.rarity, target.model.Name, Stats.TotalCollected)
+                        table.insert(_G.SoccerCollectLogs, 1, logMsg)
+                        if #_G.SoccerCollectLogs > 60 then table.remove(_G.SoccerCollectLogs) end
+                    else
+                        resetBaseCache()
                     end
                 end
             end
         end
-        task.wait(0.12)
-        if isHoldingSlime() or (not target.model.Parent) then
-            pickedUp = true; break
-        end
+    else
+        Stats.StatusText = "Scanning Lucky Block..."
     end
 
-    if not pickedUp then
-        task.wait(0.2); return
-    end
-
-    Stats.StatusText = "Membawa ke Base Plot..."
-    task.wait(0.15)
-    local baseCF = findPlayerBase()
-    if not baseCF then
-        resetBaseCache(); return
-    end
-
-    hrp.CFrame = baseCF + Vector3.new(0, 3.5, 0)
-    pcall(function()
-        hrp.AssemblyLinearVelocity  = Vector3.zero
-        hrp.AssemblyAngularVelocity = Vector3.zero
-    end)
-    task.wait(FarmConfig.PlaceWait)
-
-    local depositStart = tick()
-    while (tick() - depositStart) < 1.5 and FarmConfig.Running do
-        if PlaceSlimeRemote then
-            pcall(function() PlaceSlimeRemote:FireServer() end)
-            pcall(function() PlaceSlimeRemote:FireServer(target.model) end)
-        end
-        task.wait(0.15)
-        if not isHoldingSlime() then break end
-    end
-
-    Stats.FarmBlocksCount = Stats.FarmBlocksCount + 1
-    Stats.LastBlockName   = target.model.Name
-    Stats.LastBlockRarity = target.rarity
+    isCollecting = false
 end
 
-local farmLoopThread = nil
-local function startFarmLoop()
-    if farmLoopThread then return end
+local loopThread = nil
+local function startLoop()
+    if loopThread then return end
     Stats.SessionStartTime = os.time()
-    farmLoopThread = task.spawn(function()
-        while FarmConfig.Running do
-            pcall(runFarmCycle)
-            task.wait(FarmConfig.LoopDelay)
+    Stats.SessionCollected = 0
+    loopThread = task.spawn(function()
+        while Config.Running do
+            pcall(collectCycle)
+            task.wait(Config.CollectDelay)
         end
-        farmLoopThread = nil
+        loopThread = nil
     end)
 end
-local function stopFarmLoop() FarmConfig.Running = false end
 
 -- ============================================================
 --  CORE LOGIC: AUTO UPGRADE JUMP
@@ -786,12 +789,8 @@ local function startJumpLoop()
     end)
 end
 
-local function stopJumpLoop()
-    JumpConfig.Running = false
-end
-
 -- ============================================================
---  CORE LOGIC: FLY SYSTEM & WALKSPEED
+--  PLAYER MOVEMENT (WALKSPEED & FLY)
 -- ============================================================
 local flyBodyVelocity = nil
 local flyBodyGyro     = nil
@@ -799,10 +798,10 @@ local flyConnection   = nil
 local moveKeys = { Forward = false, Backward = false, Left = false, Right = false, Up = false, Down = false }
 
 local function startFly()
-    local char = LocalPlayer.Character
-    local hrp  = getHRP()
-    local hum  = char and char:FindFirstChildOfClass("Humanoid")
-    if not char or not hrp or not hum then return end
+    if not LocalPlayer.Character then return end
+    local hrp = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+    if not hrp or not hum then return end
 
     if flyBodyVelocity then flyBodyVelocity:Destroy() end
     if flyBodyGyro then flyBodyGyro:Destroy() end
@@ -887,7 +886,7 @@ LocalPlayer.CharacterAdded:Connect(function()
 end)
 
 -- ============================================================
---  WINDUI INTERFACE (TIKTOK LOGO EDITION)
+--  WINDUI INTERFACE (IDENTIK DENGAN MINE A MOUNTAIN)
 -- ============================================================
 local Window = WindUI:CreateWindow({
     Title         = "CROTTT HUB | Soccer 380",
@@ -910,17 +909,16 @@ local Window = WindUI:CreateWindow({
         ButtonsType = "Default",
     },
 })
-_G.CrotttSoccerWindow = Window
 
 -- ============================================================
---  CUSTOM DRAGGABLE TIKTOK LOGO FLOATING BUTTON
+--  CUSTOM DRAGGABLE TIKTOK LOGO BUTTON
 -- ============================================================
 local function createCustomDraggableButton()
-    local oldBtnGui = LocalPlayer.PlayerGui:FindFirstChild("CROTTT_SoccerFloatingBtn")
+    local oldBtnGui = LocalPlayer.PlayerGui:FindFirstChild("CROTTT_FloatingLogoButton")
     if oldBtnGui then oldBtnGui:Destroy() end
 
     local btnGui = Instance.new("ScreenGui")
-    btnGui.Name = "CROTTT_SoccerFloatingBtn"
+    btnGui.Name = "CROTTT_FloatingLogoButton"
     btnGui.ResetOnSpawn = false
     btnGui.Parent = LocalPlayer.PlayerGui
 
@@ -941,7 +939,7 @@ local function createCustomDraggableButton()
     corner.Parent = floatBtn
 
     local stroke = Instance.new("UIStroke")
-    stroke.Color = Color3.fromRGB(238, 41, 82) -- TikTok Accent Red
+    stroke.Color = Color3.fromRGB(238, 41, 82) -- TikTok Red Accent
     stroke.Thickness = 2
     stroke.Parent = floatBtn
 
@@ -964,7 +962,7 @@ end
 pcall(createCustomDraggableButton)
 
 -- ============================================================
---  TAB 1: INFO (ACCOUNT, GAME & SERVER TIME)
+--  TAB 1: INFO (ACCOUNT, GAME INFO, REALTIME CLOCK)
 -- ============================================================
 local TabInfo = Window:Tab({ Title = "Info", Icon = CUSTOM_LOGO, Border = true })
 
@@ -994,110 +992,42 @@ TabInfo:Button({
     end
 })
 
--- ============================================================
---  FITUR UTAMA SECTION
--- ============================================================
+-- SECTION UTAMA
 local MainSection = Window:Section({ Title = "Fitur Utama" })
 
--- ------------------------------------------------------------
--- TAB 2: AUTO FARM LUCKY BLOCK
--- ------------------------------------------------------------
-local TabFarm = MainSection:Tab({ Title = "Auto Farm", Icon = "solar:check-square-bold", Border = true })
+-- ============================================================
+--  TAB 2: COLLECTOR (AUTO FARM & FILTER RARITY)
+-- ============================================================
+local TabCollect = MainSection:Tab({ Title = "Collector", Icon = "solar:check-square-bold", Border = true })
 
-TabFarm:Section({ Title = "Kontrol Auto Farm Lucky Block" })
+TabCollect:Section({ Title = "Kontrol Auto Farm Lucky Block" })
 
-local FarmStatusPara = TabFarm:Paragraph({ Title = "Status Pengambilan", Desc = "Status: IDLE (Siap)" })
+local CollectStatusPara = TabCollect:Paragraph({ Title = "Status Pengambilan", Desc = "Status: IDLE (Siap)" })
 
-TabFarm:Toggle({
-    Title    = "Aktifkan Auto Farm",
-    Desc     = "Teleport, ambil lucky block sesuai filter, dan bawa ke base",
-    Value    = FarmConfig.Running,
+TabCollect:Toggle({
+    Title    = "Aktifkan Auto Collect",
+    Desc     = "Mengambil lucky block secara instan di map dan bawa ke base",
+    Value    = Config.Running,
     Callback = function(state)
-        FarmConfig.Running = state
+        Config.Running = state
         if state then
             resetBaseCache()
-            startFarmLoop()
-            WindUI:Notify({ Title = "Auto Farm", Content = "Auto Farm Diaktifkan", Duration = 2 })
-        else
-            stopFarmLoop()
-            WindUI:Notify({ Title = "Auto Farm", Content = "Auto Farm Dinonaktifkan", Duration = 2 })
+            startLoop()
         end
     end
 })
 
-local RarityDropdown = TabFarm:Dropdown({
-    Title       = "Filter Rarity Lucky Block",
-    Desc        = "Pilih rarity yang ingin di-farm (Searchable & Multi-Select)",
-    Values      = RARITY_LIST,
-    Value       = { "Japan", "Icons", "Spain" },
-    Multi       = true,
-    AllowNone   = true,
-    Callback    = function(selected)
-        for _, r in ipairs(RARITY_LIST) do
-            FarmConfig.EnabledRarities[r] = false
-        end
-        if type(selected) == "table" then
-            for k, v in pairs(selected) do
-                if type(k) == "string" and v == true then
-                    FarmConfig.EnabledRarities[k] = true
-                elseif type(v) == "string" then
-                    FarmConfig.EnabledRarities[v] = true
-                end
-            end
-        elseif type(selected) == "string" then
-            FarmConfig.EnabledRarities[selected] = true
-        end
-    end
-})
-
-TabFarm:Dropdown({
-    Title  = "Preset Rarity Cepat",
-    Desc   = "Ganti kombinasi filter rarity secara instan",
-    Values = {
-        "⭐ Preset: Japan & Icons & Spain",
-        "🔥 Semua Rarity (ALL ON)",
-        "❌ Semua Rarity (ALL OFF)"
-    },
-    Value = "⭐ Preset: Japan & Icons & Spain",
-    Callback = function(preset)
-        if preset:find("Japan") then
-            RarityDropdown:Select({ "Japan", "Icons", "Spain" })
-        elseif preset:find("ALL ON") then
-            RarityDropdown:Select(RARITY_LIST)
-        elseif preset:find("ALL OFF") then
-            RarityDropdown:Select({})
-        end
-    end
-})
-
-TabFarm:Button({
-    Title    = "🔄 Reset Base Plot Cache",
-    Desc     = "Gunakan jika posisi plot player berpindah/error",
-    Callback = function()
-        resetBaseCache()
-        WindUI:Notify({ Title = "Base Cache", Content = "Cache base plot berhasil direset!", Duration = 2 })
-    end
-})
-
-TabFarm:Section({ Title = "Auto Collect Earnings (Plot 1-50)" })
-
-TabFarm:Toggle({
-    Title    = "Auto Collect Earnings",
-    Desc     = "Otomatis ambil uang dari Plot 1 sampai 50 secara berkala",
+TabCollect:Toggle({
+    Title    = "Auto Collect Earnings (Plot 1-50)",
+    Desc     = "Otomatis ambil penghasilan plot 1 sampai 50 secara berkala",
     Value    = EarningsConfig.Running,
     Callback = function(state)
         EarningsConfig.Running = state
-        if state then
-            startEarningsLoop()
-            WindUI:Notify({ Title = "Earnings", Content = "Auto Collect ON", Duration = 2 })
-        else
-            stopEarningsLoop()
-            WindUI:Notify({ Title = "Earnings", Content = "Auto Collect OFF", Duration = 2 })
-        end
+        if state then startEarningsLoop() end
     end
 })
 
-TabFarm:Button({
+TabCollect:Button({
     Title    = "💰 Collect 1x Instan (Plot 1-50)",
     Desc     = "Klaim cash semua plot sekarang juga",
     Callback = function()
@@ -1106,30 +1036,119 @@ TabFarm:Button({
     end
 })
 
--- ------------------------------------------------------------
--- TAB 3: AUTO UPGRADE JUMP
--- ------------------------------------------------------------
-local TabJump = MainSection:Tab({ Title = "Jump Upgrade", Icon = "solar:cursor-square-bold", Border = true })
+TabCollect:Section({ Title = "Limit Pengambilan" })
 
-TabJump:Section({ Title = "Kontrol Auto Upgrade Jump" })
+TabCollect:Toggle({
+    Title    = "Aktifkan Limit Jumlah",
+    Desc     = "Otomatis berhenti jika kuota lucky block tercapai",
+    Value    = Config.LimitEnabled,
+    Callback = function(state) Config.LimitEnabled = state end
+})
 
-TabJump:Toggle({
-    Title    = "Aktifkan Auto Upgrade Jump",
-    Desc     = "Otomatis beli upgrade jump level dengan remote",
-    Value    = JumpConfig.Running,
-    Callback = function(state)
-        JumpConfig.Running = state
-        if state then
-            startJumpLoop()
-            WindUI:Notify({ Title = "Jump Upgrade", Content = "Auto Upgrade Dimulai", Duration = 2 })
-        else
-            stopJumpLoop()
-            WindUI:Notify({ Title = "Jump Upgrade", Content = "Auto Upgrade Berhenti", Duration = 2 })
+TabCollect:Input({
+    Title       = "Batas Limit (Jumlah Lucky Block)",
+    Value       = tostring(Config.LimitAmount),
+    Placeholder = "50",
+    Callback    = function(txt)
+        local n = tonumber(txt)
+        if n and n > 0 then Config.LimitAmount = math.floor(n) end
+    end
+})
+
+TabCollect:Section({ Title = "Filter by Rarity (Soccer 380 Codebase)" })
+
+TabCollect:Dropdown({
+    Title  = "Preset Rarity Cepat",
+    Desc   = "Pilih kombinasi filter rarity secara instan",
+    Values = {
+        "⭐ Semua Rarity (ON)",
+        "🔥 High Tier (Japan, Icons, Spain, Champions, OG, LIMITED)",
+        "✨ Japan & Icons Only",
+        "❌ Semua (OFF)"
+    },
+    Value  = "⭐ Semua Rarity (ON)",
+    Callback = function(preset)
+        if preset:find("Semua Rarity") then
+            for k in pairs(Config.EnabledRarities) do Config.EnabledRarities[k] = true end
+        elseif preset:find("Semua %(OFF%)") then
+            for k in pairs(Config.EnabledRarities) do Config.EnabledRarities[k] = false end
+        elseif preset:find("High Tier") then
+            for k in pairs(Config.EnabledRarities) do Config.EnabledRarities[k] = false end
+            Config.EnabledRarities["Japan"]     = true
+            Config.EnabledRarities["Icons"]     = true
+            Config.EnabledRarities["Spain"]     = true
+            Config.EnabledRarities["Champions"] = true
+            Config.EnabledRarities["OG"]        = true
+            Config.EnabledRarities["LIMITED"]   = true
+            Config.EnabledRarities["Exclusive"] = true
+        elseif preset:find("Japan & Icons") then
+            for k in pairs(Config.EnabledRarities) do Config.EnabledRarities[k] = false end
+            Config.EnabledRarities["Japan"] = true
+            Config.EnabledRarities["Icons"] = true
+            Config.EnabledRarities["Spain"] = true
         end
     end
 })
 
-TabJump:Dropdown({
+-- Toggle Individual Rarity Lengkap Codebase Soccer 380
+local SoccerRarities = {
+    { id = "LIMITED",   name = "LIMITED Lucky Block",   desc = "Tier 15 | Limited Edition" },
+    { id = "Japan",     name = "Japan Lucky Block",     desc = "Tier 14 | Sangat Langka" },
+    { id = "Icons",     name = "Icons Lucky Block",     desc = "Tier 13 | Golden Icon" },
+    { id = "Spain",     name = "Spain Lucky Block",     desc = "Tier 12 | Champions Tier" },
+    { id = "Champions", name = "Champions Lucky Block", desc = "Tier 11 | World Class" },
+    { id = "OG",        name = "OG Lucky Block",        desc = "Tier 10 | Original Block" },
+    { id = "Exclusive", name = "Exclusive Lucky Block", desc = "Tier 9 | US & Exclusive" },
+    { id = "Divine",    name = "Divine Lucky Block",    desc = "Tier 8 | Divine Slime" },
+    { id = "Slime God", name = "Slime God Lucky Block", desc = "Tier 7 | Godly Slime" },
+    { id = "Secret",    name = "Secret Lucky Block",    desc = "Tier 6 | Cosmic Block" },
+    { id = "Mythic",    name = "Mythic Lucky Block",    desc = "Tier 5 | Poison Block" },
+    { id = "Legendary", name = "Legendary Lucky Block", desc = "Tier 4 | 67 Block" },
+    { id = "Epic",      name = "Epic Lucky Block",      desc = "Tier 3 | Ghost Block" },
+    { id = "Rare",      name = "Rare Lucky Block",      desc = "Tier 2 | Volcanic Block" },
+    { id = "Common",    name = "Common Lucky Block",    desc = "Tier 1 | Water Block" },
+}
+
+for _, rInfo in ipairs(SoccerRarities) do
+    TabCollect:Toggle({
+        Title    = rInfo.name,
+        Desc     = rInfo.desc,
+        Value    = Config.EnabledRarities[rInfo.id] == true,
+        Callback = function(st)
+            Config.EnabledRarities[rInfo.id] = st
+        end
+    })
+end
+
+-- ============================================================
+--  TAB 3: STATS & SESI
+-- ============================================================
+local TabStats = MainSection:Tab({ Title = "Stats & Sesi", Icon = "solar:file-text-bold", Border = true })
+
+TabStats:Section({ Title = "Statistik Sesi Pengambilan" })
+local SessionPara = TabStats:Paragraph({ Title = "Waktu Sesi & Rate", Desc = "Durasi: 00:00:00 | 0/mnt" })
+
+TabStats:Section({ Title = "Status Upgrade & Base" })
+local UpgradesSummaryPara = TabStats:Paragraph({ Title = "Total Upgrade", Desc = "Memuat data upgrade..." })
+
+-- ============================================================
+--  TAB 4: UPGRADES (JUMP & SOCCER PLAYER)
+-- ============================================================
+local TabUpgrades = MainSection:Tab({ Title = "Upgrades", Icon = "solar:cursor-square-bold", Border = true })
+
+TabUpgrades:Section({ Title = "Jump Upgrade (+1, +5, +10, Auto)" })
+
+TabUpgrades:Toggle({
+    Title    = "Aktifkan Auto Upgrade Jump",
+    Desc     = "Otomatis upgrade jump level dengan remote",
+    Value    = JumpConfig.Running,
+    Callback = function(state)
+        JumpConfig.Running = state
+        if state then startJumpLoop() end
+    end
+})
+
+TabUpgrades:Dropdown({
     Title    = "Pilih Porsi Upgrade Jump",
     Desc     = "Auto All akan prioritaskan +10 -> +5 -> +1 sesuai koin",
     Values   = { "Auto All", "+10 Jump", "+5 Jump", "+1 Jump" },
@@ -1140,135 +1159,132 @@ TabJump:Dropdown({
     end
 })
 
-TabJump:Toggle({
+TabUpgrades:Toggle({
     Title    = "Smart Coin Protection",
-    Desc     = "Mencegah spam popup Robux jika koin tidak mencukupi",
+    Desc     = "Mencegah pembelian jika koin kurang (Anti popup Robux spam)",
     Value    = JumpConfig.CheckCoin,
-    Callback = function(state)
-        JumpConfig.CheckCoin = state
-    end
+    Callback = function(state) JumpConfig.CheckCoin = state end
 })
 
-TabJump:Input({
-    Title       = "Jeda Upgrade (Detik)",
-    Desc        = "Waktu tunggu per loop upgrade jump (default: 0.4)",
+TabUpgrades:Input({
+    Title       = "Jeda Upgrade Jump (Detik)",
+    Desc        = "Waktu tunggu per loop (default: 0.4)",
     Value       = tostring(JumpConfig.Delay),
     Placeholder = "0.4",
     Callback    = function(txt)
         local val = tonumber(txt)
-        if val and val >= 0.05 then
-            JumpConfig.Delay = val
-        end
+        if val and val >= 0.05 then JumpConfig.Delay = val end
     end
 })
 
--- ------------------------------------------------------------
--- TAB 4: AUTO UPGRADE SOCCER PLAYER
--- ------------------------------------------------------------
-local TabSoccer = MainSection:Tab({ Title = "Soccer Upgrade", Icon = "solar:square-transfer-horizontal-bold", Border = true })
+TabUpgrades:Section({ Title = "Soccer Player Upgrade (Slot 1-50)" })
 
-TabSoccer:Section({ Title = "Kontrol Upgrade Soccer Player" })
-
-TabSoccer:Toggle({
-    Title    = "Aktifkan Auto Upgrade Soccer",
+TabUpgrades:Toggle({
+    Title    = "Aktifkan Auto Upgrade Soccer Player",
     Desc     = "Upgrade pemain soccer di plot base secara terus-menerus",
     Value    = SoccerConfig.Running,
     Callback = function(state)
         SoccerConfig.Running = state
-        if state then
-            startSoccerUpgradeLoop()
-            WindUI:Notify({ Title = "Soccer Player", Content = "Auto Upgrade Dimulai", Duration = 2 })
-        else
-            stopSoccerUpgradeLoop()
-            WindUI:Notify({ Title = "Soccer Player", Content = "Auto Upgrade Berhenti", Duration = 2 })
-        end
+        if state then startSoccerUpgradeLoop() end
     end
 })
 
-TabSoccer:Dropdown({
+TabUpgrades:Dropdown({
     Title    = "Target Slot Base Player",
     Desc     = "Pilih cakupan slot plot yang akan di-upgrade",
     Values   = { "All Slots", "Active Only", "Specific Slot" },
     Value    = "All Slots",
     Multi    = false,
-    Callback = function(val)
-        SoccerConfig.Mode = val
-    end
+    Callback = function(val) SoccerConfig.Mode = val end
 })
 
-TabSoccer:Slider({
+TabUpgrades:Slider({
     Title    = "Nomor Slot Spesifik",
-    Desc     = "Hanya aktif jika mode 'Specific Slot' dipilih",
+    Desc     = "Digunakan jika mode 'Specific Slot' dipilih",
     Step     = 1,
     Value    = { Min = 1, Max = 50, Default = SoccerConfig.SpecificSlot },
-    Callback = function(val)
-        SoccerConfig.SpecificSlot = math.floor(val)
-    end
+    Callback = function(val) SoccerConfig.SpecificSlot = math.floor(val) end
 })
 
-TabSoccer:Input({
+TabUpgrades:Input({
     Title       = "Jeda Upgrade Slot (Detik)",
     Desc        = "Waktu tunggu per proses upgrade slot (default: 0.25)",
     Value       = tostring(SoccerConfig.Delay),
     Placeholder = "0.25",
     Callback    = function(txt)
         local val = tonumber(txt)
-        if val and val >= 0.05 then
-            SoccerConfig.Delay = val
-        end
+        if val and val >= 0.05 then SoccerConfig.Delay = val end
     end
 })
 
-TabSoccer:Button({
+TabUpgrades:Button({
     Title    = "⚡ UPGRADE ALL SLOTS 1X (1 s/d 50)",
-    Desc     = "Upgrade semua slot base secara instan satu kali",
+    Desc     = "Trigger upgrade untuk semua slot 1 s/d 50 sekaligus",
     Callback = function()
         for i = 1, SoccerConfig.MaxSlots do
             upgradeSingleSlot(i)
         end
-        WindUI:Notify({ Title = "Soccer Player", Content = "Semua slot 1-50 berhasil diupgrade 1x!", Duration = 2 })
+        WindUI:Notify({ Title = "Soccer Upgrade", Content = "Semua slot 1-50 berhasil diupgrade 1x!", Duration = 2 })
     end
 })
 
--- ------------------------------------------------------------
--- TAB 5: STATS & SESSION
--- ------------------------------------------------------------
-local TabStats = MainSection:Tab({ Title = "Stats & Sesi", Icon = "solar:file-text-bold", Border = true })
-
-TabStats:Section({ Title = "Statistik Sesi Permainan" })
-
-local SessionStatsPara = TabStats:Paragraph({
-    Title = "⏱️ Waktu Sesi & Rate",
-    Desc  = "Durasi: 00:00:00 | Terkumpul: 0 Block"
-})
-
-local UpgradesStatsPara = TabStats:Paragraph({
-    Title = "📊 Total Upgrade Berhasil",
-    Desc  = "Jump Upgrades: 0 Kali\nSoccer Upgrades: 0 Kali\nEarnings Collected: 0 Kali"
-})
-
 -- ============================================================
---  UTILITIES SECTION
+--  UTILITIES SECTION (RESET & PLAYER)
 -- ============================================================
 local UtilitySection = Window:Section({ Title = "Utilities" })
 
--- ------------------------------------------------------------
--- TAB 6: PLAYER & MOVEMENT
--- ------------------------------------------------------------
+-- TAB 5: RESET & CACHE
+local TabReset = UtilitySection:Tab({ Title = "Reset & Cache", Icon = "solar:square-transfer-horizontal-bold", Border = true })
+
+TabReset:Section({ Title = "Fast Character Reset" })
+
+TabReset:Button({
+    Title    = "💀 RESET CHARACTER (BreakJoints)",
+    Desc     = "Fast die dengan cooldown aman untuk respawn",
+    Callback = function()
+        if ResetState.ResetCooldown then return end
+        ResetState.ResetCooldown = true
+        if LocalPlayer.Character then pcall(function() LocalPlayer.Character:BreakJoints() end) end
+        pcall(function()
+            StarterGui:SetCore("SendNotification", {
+                Title    = "Character Reset",
+                Text     = "Cooldown 6 detik untuk keamanan...",
+                Duration = 3
+            })
+        end)
+        task.spawn(function()
+            task.wait(6)
+            ResetState.ResetCooldown = false
+        end)
+    end
+})
+
+TabReset:Section({ Title = "Base Plot Cache" })
+
+TabReset:Button({
+    Title    = "🔄 Reset Base Plot Cache",
+    Desc     = "Gunakan jika posisi plot player berpindah / error",
+    Callback = function()
+        resetBaseCache()
+        WindUI:Notify({ Title = "Base Cache", Content = "Cache base plot berhasil direset!", Duration = 2 })
+    end
+})
+
+-- TAB 6: PLAYER MODIFIERS
 local TabPlayer = UtilitySection:Tab({ Title = "Player", Icon = "solar:password-minimalistic-input-bold", Border = true })
 
 TabPlayer:Section({ Title = "Game UI & Notifications" })
 
 TabPlayer:Toggle({
     Title    = "Disable Game Notifications",
-    Desc     = "Sembunyikan semua popup notifikasi dan banner bawaan game",
+    Desc     = "Sembunyikan semua popup notifikasi, banner, dan announcement dalam game",
     Value    = PlayerConfig.DisableNotifications,
     Callback = function(state)
         PlayerConfig.DisableNotifications = state
         applyNotificationState()
         WindUI:Notify({
-            Title   = "Game Notifications",
-            Content = state and "Notifikasi Game Dinonaktifkan" or "Notifikasi Game Diaktifkan",
+            Title    = "Game Notifications",
+            Content  = state and "Notifikasi Game Dinonaktifkan" or "Notifikasi Game Diaktifkan",
             Duration = 2
         })
     end
@@ -1310,7 +1326,7 @@ TabPlayer:Toggle({
 TabPlayer:Slider({
     Title    = "Kecepatan Terbang",
     Step     = 5,
-    Value    = { Min = 20, Max = 300, Default = PlayerConfig.FlySpeed },
+    Value    = { Min = 20, Max = 200, Default = PlayerConfig.FlySpeed },
     Callback = function(v) PlayerConfig.FlySpeed = v end
 })
 
@@ -1323,44 +1339,35 @@ task.spawn(function()
         local h = math.floor(elapsed / 3600); local m = math.floor((elapsed % 3600) / 60); local s = elapsed % 60
         local timeString = os.date("%X")
 
-        -- Update Game Info
+        -- Update Info Tab
         GameInfoPara:SetDesc(string.format(
             "Game: Soccer 380\nPlace ID: %d\nSession Time: %dm %ds\nJam (Waktu): %s\nKoin Player: %s",
             game.PlaceId,
             math.floor(elapsed / 60),
             s,
             timeString,
-            formatNumberShort(getPlayerCash())
+            formatSuffixNumber(getPlayerCash())
         ))
 
-        -- Update Status Farm
-        if FarmConfig.Running then
-            FarmStatusPara:SetDesc(string.format(
-                "Status: %s\nTotal Terkumpul: %d Block | Terakhir: %s [%s]",
-                Stats.StatusText,
-                Stats.FarmBlocksCount,
-                Stats.LastBlockName,
-                Stats.LastBlockRarity
-            ))
+        -- Update Collector Status
+        if Config.Running then
+            CollectStatusPara:SetDesc(string.format("Mengambil... | Total Diambil: %d Block", Stats.SessionCollected))
         else
-            FarmStatusPara:SetDesc("Status: IDLE (Dihentikan)")
+            CollectStatusPara:SetDesc("Status: IDLE (Dihentikan)")
         end
 
-        -- Update Sesi & Rate
-        if Stats.SessionStartTime and FarmConfig.Running then
+        -- Update Session Stats
+        if Stats.SessionStartTime and Config.Running then
             local cElapsed = os.time() - Stats.SessionStartTime
             local ch = math.floor(cElapsed / 3600); local cm = math.floor((cElapsed % 3600) / 60); local cs = cElapsed % 60
-            local rate = (cElapsed > 0) and math.floor((Stats.FarmBlocksCount / (cElapsed / 60)) * 10) / 10 or 0
-            SessionStatsPara:SetDesc(string.format(
-                "Durasi: %02d:%02d:%02d | Kecepatan: %.1f block/mnt | Total: %d Block",
-                ch, cm, cs, rate, Stats.FarmBlocksCount
-            ))
+            local rate = (cElapsed > 0) and math.floor((Stats.SessionCollected / (cElapsed / 60)) * 10) / 10 or 0
+            SessionPara:SetDesc(string.format("Durasi: %02d:%02d:%02d | Kecepatan: %.1f/mnt | Diambil: %d", ch, cm, cs, rate, Stats.SessionCollected))
         else
-            SessionStatsPara:SetDesc(string.format("Durasi: %02d:%02d:%02d | Total: %d Block", h, m, s, Stats.FarmBlocksCount))
+            SessionPara:SetDesc(string.format("Durasi: %02d:%02d:%02d | Total Diambil: %d Block", h, m, s, Stats.TotalCollected))
         end
 
-        -- Update Total Upgrades
-        UpgradesStatsPara:SetDesc(string.format(
+        -- Update Upgrades Summary
+        UpgradesSummaryPara:SetDesc(string.format(
             "Jump Upgrades: %d Kali (Level: %d)\nSoccer Upgrades: %d Kali\nEarnings Collected: %d Kali",
             JumpConfig.UpgradedCount,
             getPlayerJumpLevel(),
@@ -1372,12 +1379,9 @@ task.spawn(function()
     end
 end)
 
--- ============================================================
---  NOTIFICATION LOADED
--- ============================================================
 WindUI:Notify({
     Title    = "CROTTT HUB Dimuat!",
-    Content  = "Soccer 380 siap digunakan. Klik logo TikTok untuk buka/tutup menu.",
+    Content  = "Klik tombol TikTok mengambang untuk buka/tutup menu.",
     Duration = 4,
     Icon     = CUSTOM_LOGO
 })
