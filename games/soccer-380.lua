@@ -1,20 +1,25 @@
 -- ============================================================
---  FILE NAME : soccer-380.lua
---  DESKRIPSI : Script Auto Farm, Upgrades, & Multi-Tool Soccer 380
---  UI ENGINE : WindUI (Footagesus)
+--  CROTTT HUB | SOCCER 380 (TikTok Logo Edition)
+--  [1] AUTO FARM LUCKY BLOCKS (FILTER MULTI-SELECT DROPDOWN)
+--  [2] AUTO COLLECT EARNINGS (PLOT 1 - 50)
+--  [3] AUTO UPGRADE JUMP (+1, +5, +10, AUTO ALL + SMART COIN)
+--  [4] AUTO UPGRADE SOCCER PLAYER (SLIME UPGRADE PLOT 1-50)
+--  [5] PLAYER (DISABLE NOTIFIKASI GAME, WALKSPEED, FLYHIGH)
 -- ============================================================
 
 -- 1. CEK SINGLE EXECUTION (Mencegah GUI Tumpuk)
-if _G.Soccer380Running then
+if _G.CrotttSoccerRunning then
     pcall(function()
-        if _G.Soccer380Window then
-            _G.Soccer380Window:Destroy()
+        if _G.CrotttSoccerWindow then
+            _G.CrotttSoccerWindow:Destroy()
         end
+        local oldBtn = game:GetService("Players").LocalPlayer.PlayerGui:FindFirstChild("CROTTT_SoccerFloatingBtn")
+        if oldBtn then oldBtn:Destroy() end
     end)
 end
-_G.Soccer380Running = true
+_G.CrotttSoccerRunning = true
 
--- 2. CLONEREF SERVICES & INITIALIZATION
+-- 2. LOADER WINDUI DENGAN CLONEREF & MULTI-FALLBACK
 local cloneref = (cloneref or clonereference or function(instance)
     return instance
 end)
@@ -28,8 +33,8 @@ local StarterGui        = cloneref(game:GetService("StarterGui"))
 local TweenService      = cloneref(game:GetService("TweenService"))
 
 local LocalPlayer = Players.LocalPlayer
+local ScriptStartTime = os.time()
 
--- 3. LOADER WINDUI DENGAN MULTI-FALLBACK
 local WindUI = nil
 local loaderUrls = {
     "https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua",
@@ -38,18 +43,47 @@ local loaderUrls = {
 }
 
 for _, url in ipairs(loaderUrls) do
-    local success, result = pcall(function()
+    local ok, res = pcall(function()
         return loadstring(game:HttpGet(url))()
     end)
-    if success and result then
-        WindUI = result
+    if ok and type(res) == "table" and res.CreateWindow then
+        WindUI = res
         break
     end
 end
 
 if not WindUI then
-    warn("[Soccer 380] Gagal mengunduh WindUI.")
+    warn("[CROTTT HUB] Gagal mengunduh library WindUI!")
     return
+end
+
+-- 3. TIKTOK LOGO LOADER DENGAN CACHE EXECUTOR
+local function getOrDownloadCustomIcon()
+    local pngUrl = "https://cdn-icons-png.flaticon.com/512/361/361468.png"
+    local fileName = "crottt_tiktok_logo.png"
+    
+    if writefile and getcustomasset then
+        pcall(function()
+            if not (isfile and isfile(fileName)) then
+                writefile(fileName, game:HttpGet(pngUrl))
+            end
+        end)
+        local ok, assetId = pcall(function()
+            return getcustomasset(fileName)
+        end)
+        if ok and assetId then
+            return assetId
+        end
+    end
+    return pngUrl
+end
+
+local CUSTOM_LOGO = getOrDownloadCustomIcon()
+
+local function getExecutorName()
+    if identifyexecutor then return identifyexecutor()
+    elseif getexecutorname then return getexecutorname()
+    else return "Universal / Unknown" end
 end
 
 -- ============================================================
@@ -65,6 +99,75 @@ local PlaceSlimeRemote      = RemotesFolder and RemotesFolder:FindFirstChild("Pl
 local BuySpeedUpgrade       = RemotesFolder and RemotesFolder:FindFirstChild("Buy Speed Upgrade")
 local CollectEarningsRemote = RemotesFolder and RemotesFolder:FindFirstChild("Collect Earnings")
 local UpgradeSlimeRemote    = RemotesFolder and RemotesFolder:FindFirstChild("Upgrade Slime")
+
+-- ============================================================
+--  GLOBAL STATE & CONFIGURATIONS
+-- ============================================================
+local FarmConfig = {
+    Running         = false,
+    LoopDelay       = 0.5,
+    PickupWait      = 0.25,
+    PlaceWait       = 0.35,
+    MaxCarry        = 50,
+    EnabledRarities = {
+        ["Japan"]     = true,
+        ["Icons"]     = true,
+        ["Spain"]     = true,
+        ["Champions"] = false,
+        ["OG"]        = false,
+        ["LIMITED"]   = false,
+        ["Exclusive"] = false,
+        ["Divine"]    = false,
+        ["Slime God"] = false,
+        ["Secret"]    = false,
+        ["Mythic"]    = false,
+        ["Legendary"] = false,
+        ["Epic"]      = false,
+        ["Rare"]      = false,
+        ["Common"]    = false,
+    },
+}
+
+local EarningsConfig = {
+    Running           = false,
+    MaxPlot           = 50,
+    Interval          = 1.5,
+    TotalCollectCount = 0,
+}
+
+local JumpConfig = {
+    Running        = false,
+    SelectedTier   = "Auto All",
+    Delay          = 0.4,
+    CheckCoin      = true,
+    UpgradedCount  = 0,
+}
+
+local SoccerConfig = {
+    Running        = false,
+    Mode           = "All Slots",
+    SpecificSlot   = 1,
+    MaxSlots       = 50,
+    Delay          = 0.25,
+    TotalUpgrades  = 0,
+}
+
+local PlayerConfig = {
+    DisableNotifications = false,
+    WalkSpeedEnabled     = false,
+    WalkSpeedValue       = 60,
+    DefaultWalkSpeed     = 16,
+    FlyEnabled           = false,
+    FlySpeed             = 60,
+}
+
+local Stats = {
+    SessionStartTime = nil,
+    FarmBlocksCount  = 0,
+    LastBlockName    = "-",
+    LastBlockRarity  = "-",
+    StatusText       = "IDLE (Siap)",
+}
 
 -- ============================================================
 --  RARITY DATA & MAPPING
@@ -119,56 +222,7 @@ local BLOCK_NAME_TO_RARITY = {
 }
 
 -- ============================================================
---  CONFIGURATIONS
--- ============================================================
-local FarmConfig = {
-    Running       = false,
-    LoopDelay     = 0.5,
-    PickupWait    = 0.25,
-    PlaceWait     = 0.35,
-    MaxCarry      = 50,
-    EnabledRarities = {
-        Icons = true,
-        Japan = true,
-    },
-}
-
-local EarningsConfig = {
-    Running           = false,
-    MaxPlot           = 50,
-    Interval          = 1.5,
-    TotalCollectCount = 0,
-}
-
-local JumpConfig = {
-    Running        = false,
-    SelectedTier   = "Auto All",
-    Delay          = 0.4,
-    CheckCoin      = true,
-    UpgradedCount  = 0,
-}
-
-local SoccerConfig = {
-    Running        = false,
-    Mode           = "All Slots",
-    SpecificSlot   = 1,
-    MaxSlots       = 50,
-    Delay          = 0.25,
-    TotalUpgrades  = 0,
-}
-
-local PlayerConfig = {
-    DisableNotifications = false,
-    FlyEnabled           = false,
-    FlySpeed             = 60,
-    MinSpeed             = 1,
-    MaxSpeed             = 500,
-}
-
-local sessionPickedCount = 0
-
--- ============================================================
---  HELPER FUNCTIONS: CASH, JUMP, & MATH
+--  HELPER: CASH & NUMBER PARSER
 -- ============================================================
 local SUFFIXES = {
     k = 1e3, m = 1e6, b = 1e9, t = 1e12, qa = 1e15, q = 1e15, qi = 1e18,
@@ -227,6 +281,9 @@ local function getPlayerCash()
     return 0
 end
 
+-- ============================================================
+--  JUMP PRICING FORMULA
+-- ============================================================
 local BASE_PRICE = 260
 local GROWTH_PER_LEVEL = 1.082
 local REFERENCE_FIVE_MULTIPLIER = 1.38
@@ -284,10 +341,14 @@ local function getPriceForTier(tierCode)
             end
         end
     end
+
     local curLevel = getPlayerJumpLevel()
     return calcBulkPrice(curLevel, amount)
 end
 
+-- ============================================================
+--  CHARACTER & BASE DETECTION
+-- ============================================================
 local function getHRP()
     local char = LocalPlayer.Character
     if not char then return nil end
@@ -333,9 +394,6 @@ local function isHoldingSlime()
     return false
 end
 
--- ============================================================
---  BASE & PLOT FINDER
--- ============================================================
 local _cachedBaseCF    = nil
 local _cachedBaseModel = nil
 
@@ -559,9 +617,10 @@ local function runFarmCycle()
         and LocalPlayer.Character:GetAttribute("LuckyBlockCount") or 0
     if invCount >= FarmConfig.MaxCarry then
         FarmConfig.Running = false
+        Stats.StatusText = "Inventory Penuh (50/50)"
         WindUI:Notify({
             Title = "Inventory Penuh!",
-            Content = ("Batas %d Lucky Block tercapai. Auto Farm dinonaktifkan."):format(FarmConfig.MaxCarry),
+            Content = ("Batas %d Lucky Block tercapai. Auto Farm berhenti."):format(FarmConfig.MaxCarry),
             Duration = 5
         })
         return
@@ -569,6 +628,7 @@ local function runFarmCycle()
 
     local blocks = getLuckyBlocks()
     if #blocks == 0 then
+        Stats.StatusText = "Menunggu Lucky Block Spawn..."
         return
     end
 
@@ -576,6 +636,7 @@ local function runFarmCycle()
     local hrp    = getHRP()
     if not hrp then return end
 
+    Stats.StatusText = ("Teleport ke: %s [%s]"):format(target.model.Name, target.rarity)
     hrp.CFrame = target.rootPart.CFrame * CFrame.new(0, 0.5, 0)
     pcall(function()
         hrp.AssemblyLinearVelocity  = Vector3.zero
@@ -619,6 +680,7 @@ local function runFarmCycle()
         task.wait(0.2); return
     end
 
+    Stats.StatusText = "Membawa ke Base Plot..."
     task.wait(0.15)
     local baseCF = findPlayerBase()
     if not baseCF then
@@ -642,12 +704,15 @@ local function runFarmCycle()
         if not isHoldingSlime() then break end
     end
 
-    sessionPickedCount = sessionPickedCount + 1
+    Stats.FarmBlocksCount = Stats.FarmBlocksCount + 1
+    Stats.LastBlockName   = target.model.Name
+    Stats.LastBlockRarity = target.rarity
 end
 
 local farmLoopThread = nil
 local function startFarmLoop()
     if farmLoopThread then return end
+    Stats.SessionStartTime = os.time()
     farmLoopThread = task.spawn(function()
         while FarmConfig.Running do
             pcall(runFarmCycle)
@@ -726,97 +791,95 @@ local function stopJumpLoop()
 end
 
 -- ============================================================
---  CORE LOGIC: FLY SYSTEM
+--  CORE LOGIC: FLY SYSTEM & WALKSPEED
 -- ============================================================
-local flyConn      = nil
-local flyBodyVel   = nil
-local flyBodyGyro  = nil
-local _flyParts    = {}
-
-local function cleanFlyParts()
-    for _, p in ipairs(_flyParts) do
-        pcall(function() p:Destroy() end)
-    end
-    _flyParts    = {}
-    flyBodyVel   = nil
-    flyBodyGyro  = nil
-end
+local flyBodyVelocity = nil
+local flyBodyGyro     = nil
+local flyConnection   = nil
+local moveKeys = { Forward = false, Backward = false, Left = false, Right = false, Up = false, Down = false }
 
 local function startFly()
-    cleanFlyParts()
     local char = LocalPlayer.Character
     local hrp  = getHRP()
-    if not char or not hrp then return end
+    local hum  = char and char:FindFirstChildOfClass("Humanoid")
+    if not char or not hrp or not hum then return end
 
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if hum then hum.PlatformStand = true end
+    if flyBodyVelocity then flyBodyVelocity:Destroy() end
+    if flyBodyGyro then flyBodyGyro:Destroy() end
 
-    local bv = Instance.new("BodyVelocity")
-    bv.Velocity  = Vector3.zero
-    bv.MaxForce  = Vector3.new(1e6, 1e6, 1e6)
-    bv.P         = 9000
-    bv.Parent    = hrp
-    flyBodyVel   = bv
-    table.insert(_flyParts, bv)
+    flyBodyVelocity = Instance.new("BodyVelocity")
+    flyBodyVelocity.Name = "FlyVelocity"
+    flyBodyVelocity.MaxForce = Vector3.new(1e6, 1e6, 1e6)
+    flyBodyVelocity.Velocity = Vector3.zero
+    flyBodyVelocity.Parent = hrp
 
-    local bg = Instance.new("BodyGyro")
-    bg.MaxTorque = Vector3.new(1e6, 1e6, 1e6)
-    bg.P         = 9000
-    bg.D         = 100
-    bg.CFrame    = hrp.CFrame
-    bg.Parent    = hrp
-    flyBodyGyro  = bg
-    table.insert(_flyParts, bg)
+    flyBodyGyro = Instance.new("BodyGyro")
+    flyBodyGyro.Name = "FlyGyro"
+    flyBodyGyro.MaxTorque = Vector3.new(1e6, 1e6, 1e6)
+    flyBodyGyro.P = 10000
+    flyBodyGyro.CFrame = hrp.CFrame
+    flyBodyGyro.Parent = hrp
 
-    flyConn = RunService.Heartbeat:Connect(function()
-        local fhrp = getHRP()
-        if not fhrp or not PlayerConfig.FlyEnabled then
-            cleanFlyParts()
-            local fhum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-            if fhum then fhum.PlatformStand = false end
-            if flyConn then flyConn:Disconnect(); flyConn = nil end
-            return
-        end
+    hum.PlatformStand = true
 
+    if flyConnection then flyConnection:Disconnect() end
+    flyConnection = RunService.RenderStepped:Connect(function()
+        if not PlayerConfig.FlyEnabled or not LocalPlayer.Character or not hrp or not flyBodyVelocity then return end
         local cam = Workspace.CurrentCamera
-        local cf  = cam.CFrame
-        local dir = Vector3.zero
+        local moveDir = Vector3.zero
+        if moveKeys.Forward  then moveDir = moveDir + cam.CFrame.LookVector end
+        if moveKeys.Backward then moveDir = moveDir - cam.CFrame.LookVector end
+        if moveKeys.Left     then moveDir = moveDir - cam.CFrame.RightVector end
+        if moveKeys.Right    then moveDir = moveDir + cam.CFrame.RightVector end
+        if moveKeys.Up       then moveDir = moveDir + Vector3.new(0, 1, 0) end
+        if moveKeys.Down     then moveDir = moveDir - Vector3.new(0, 1, 0) end
 
-        if UserInputService:IsKeyDown(Enum.KeyCode.W) or UserInputService:IsKeyDown(Enum.KeyCode.Up) then
-            dir = dir + cf.LookVector
+        if moveDir.Magnitude > 0 then
+            flyBodyVelocity.Velocity = moveDir.Unit * PlayerConfig.FlySpeed
+        else
+            flyBodyVelocity.Velocity = Vector3.zero
         end
-        if UserInputService:IsKeyDown(Enum.KeyCode.S) or UserInputService:IsKeyDown(Enum.KeyCode.Down) then
-            dir = dir - cf.LookVector
-        end
-        if UserInputService:IsKeyDown(Enum.KeyCode.A) or UserInputService:IsKeyDown(Enum.KeyCode.Left) then
-            dir = dir - cf.RightVector
-        end
-        if UserInputService:IsKeyDown(Enum.KeyCode.D) or UserInputService:IsKeyDown(Enum.KeyCode.Right) then
-            dir = dir + cf.RightVector
-        end
-        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
-            dir = dir + Vector3.new(0, 1, 0)
-        end
-        if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) or UserInputService:IsKeyDown(Enum.KeyCode.RightControl) then
-            dir = dir - Vector3.new(0, 1, 0)
-        end
-
-        if dir.Magnitude > 0 then
-            dir = dir.Unit * PlayerConfig.FlySpeed
-        end
-
-        if flyBodyVel  then flyBodyVel.Velocity = dir end
-        if flyBodyGyro then flyBodyGyro.CFrame   = cf end
+        flyBodyGyro.CFrame = cam.CFrame
     end)
 end
 
 local function stopFly()
-    PlayerConfig.FlyEnabled = false
-    cleanFlyParts()
-    if flyConn then flyConn:Disconnect(); flyConn = nil end
-    local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-    if hum then hum.PlatformStand = false end
+    if flyConnection then flyConnection:Disconnect(); flyConnection = nil end
+    if flyBodyVelocity then flyBodyVelocity:Destroy(); flyBodyVelocity = nil end
+    if flyBodyGyro then flyBodyGyro:Destroy(); flyBodyGyro = nil end
+    if LocalPlayer.Character then
+        local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if hum then hum.PlatformStand = false end
+    end
 end
+
+UserInputService.InputBegan:Connect(function(input, gpe)
+    if gpe then return end
+    if input.KeyCode == Enum.KeyCode.W then moveKeys.Forward = true
+    elseif input.KeyCode == Enum.KeyCode.S then moveKeys.Backward = true
+    elseif input.KeyCode == Enum.KeyCode.A then moveKeys.Left = true
+    elseif input.KeyCode == Enum.KeyCode.D then moveKeys.Right = true
+    elseif input.KeyCode == Enum.KeyCode.Space or input.KeyCode == Enum.KeyCode.E then moveKeys.Up = true
+    elseif input.KeyCode == Enum.KeyCode.LeftControl or input.KeyCode == Enum.KeyCode.LeftShift or input.KeyCode == Enum.KeyCode.Q then moveKeys.Down = true end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.KeyCode == Enum.KeyCode.W then moveKeys.Forward = false
+    elseif input.KeyCode == Enum.KeyCode.S then moveKeys.Backward = false
+    elseif input.KeyCode == Enum.KeyCode.A then moveKeys.Left = false
+    elseif input.KeyCode == Enum.KeyCode.D then moveKeys.Right = false
+    elseif input.KeyCode == Enum.KeyCode.Space or input.KeyCode == Enum.KeyCode.E then moveKeys.Up = false
+    elseif input.KeyCode == Enum.KeyCode.LeftControl or input.KeyCode == Enum.KeyCode.LeftShift or input.KeyCode == Enum.KeyCode.Q then moveKeys.Down = false end
+end)
+
+RunService.Heartbeat:Connect(function()
+    if PlayerConfig.WalkSpeedEnabled and LocalPlayer.Character then
+        local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if hum and hum.WalkSpeed ~= PlayerConfig.WalkSpeedValue then
+            hum.WalkSpeed = PlayerConfig.WalkSpeedValue
+        end
+    end
+end)
 
 LocalPlayer.CharacterAdded:Connect(function()
     task.wait(1)
@@ -824,33 +887,129 @@ LocalPlayer.CharacterAdded:Connect(function()
 end)
 
 -- ============================================================
---  WIND UI WINDOW & TABS BUILDER
+--  WINDUI INTERFACE (TIKTOK LOGO EDITION)
 -- ============================================================
 local Window = WindUI:CreateWindow({
-    Title        = "AHH CROTT - Soccer 380",
-    Icon         = "flame",
-    Author       = "Multi-Tool Hub",
-    Folder       = "Soccer380Hub",
-    Size         = UDim2.fromOffset(580, 460),
-    Transparent  = true,
-    Theme        = "Dark",
-    SideBarWidth = 175,
-    HasOutline   = true,
+    Title         = "CROTTT HUB | Soccer 380",
+    Icon          = CUSTOM_LOGO,
+    Author        = "by CROTTT Team",
+    Folder        = "crottt_soccer380",
+    Size          = UDim2.fromOffset(640, 520),
+    HideSearchBar = false,
+    OpenButton    = {
+        Title           = "Open CROTTT HUB",
+        CornerRadius    = UDim.new(1, 0),
+        StrokeThickness = 2,
+        Enabled         = false,
+        Draggable       = true,
+        OnlyMobile      = false,
+        Scale           = 0.8,
+    },
+    Topbar = {
+        Height      = 44,
+        ButtonsType = "Default",
+    },
 })
-_G.Soccer380Window = Window
+_G.CrotttSoccerWindow = Window
+
+-- ============================================================
+--  CUSTOM DRAGGABLE TIKTOK LOGO FLOATING BUTTON
+-- ============================================================
+local function createCustomDraggableButton()
+    local oldBtnGui = LocalPlayer.PlayerGui:FindFirstChild("CROTTT_SoccerFloatingBtn")
+    if oldBtnGui then oldBtnGui:Destroy() end
+
+    local btnGui = Instance.new("ScreenGui")
+    btnGui.Name = "CROTTT_SoccerFloatingBtn"
+    btnGui.ResetOnSpawn = false
+    btnGui.Parent = LocalPlayer.PlayerGui
+
+    local floatBtn = Instance.new("ImageButton")
+    floatBtn.Name = "DraggableTikTokBtn"
+    floatBtn.Size = UDim2.new(0, 56, 0, 56)
+    floatBtn.Position = UDim2.new(0, 915, 0, 65)
+    floatBtn.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
+    floatBtn.BackgroundTransparency = 0.1
+    floatBtn.BorderSizePixel = 0
+    floatBtn.Active = true
+    floatBtn.Draggable = true
+    floatBtn.AutoButtonColor = true
+    floatBtn.Parent = btnGui
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(1, 0)
+    corner.Parent = floatBtn
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = Color3.fromRGB(238, 41, 82) -- TikTok Accent Red
+    stroke.Thickness = 2
+    stroke.Parent = floatBtn
+
+    local img = Instance.new("ImageLabel")
+    img.Size = UDim2.new(1, -12, 1, -12)
+    img.Position = UDim2.new(0, 6, 0, 6)
+    img.BackgroundTransparency = 1
+    img.Image = CUSTOM_LOGO
+    img.ScaleType = Enum.ScaleType.Fit
+    img.Parent = floatBtn
+
+    floatBtn.MouseButton1Click:Connect(function()
+        if Window.Toggle then
+            Window:Toggle()
+        elseif Window.Holder then
+            Window.Holder.Visible = not Window.Holder.Visible
+        end
+    end)
+end
+pcall(createCustomDraggableButton)
+
+-- ============================================================
+--  TAB 1: INFO (ACCOUNT, GAME & SERVER TIME)
+-- ============================================================
+local TabInfo = Window:Tab({ Title = "Info", Icon = CUSTOM_LOGO, Border = true })
+
+TabInfo:Section({ Title = "Informasi Akun" })
+
+local AccountPara = TabInfo:Paragraph({
+    Title = "👤 Account",
+    Desc  = string.format("User: %s (@%s)\nStatus: 🟢 Keyless (Active)\nExecutor: %s", LocalPlayer.Name, LocalPlayer.DisplayName, getExecutorName())
+})
+
+TabInfo:Section({ Title = "Informasi Game & Server" })
+
+local GameInfoPara = TabInfo:Paragraph({
+    Title = "🎮 Game Info",
+    Desc  = string.format("Game: Soccer 380\nPlace ID: %d\nSession Time: 0m 0s\nJam (Waktu): %s", game.PlaceId, os.date("%X"))
+})
+
+TabInfo:Button({
+    Title = "📋 Copy Server Job ID",
+    Desc  = "Salin Job ID server ke clipboard",
+    Callback = function()
+        local jid = game.JobId ~= "" and game.JobId or "Singleplayer"
+        if setclipboard then
+            setclipboard(jid)
+            WindUI:Notify({ Title = "Job ID Disalin", Content = jid, Duration = 3 })
+        end
+    end
+})
+
+-- ============================================================
+--  FITUR UTAMA SECTION
+-- ============================================================
+local MainSection = Window:Section({ Title = "Fitur Utama" })
 
 -- ------------------------------------------------------------
--- [TAB 1] AUTO FARM LUCKY BLOCK
+-- TAB 2: AUTO FARM LUCKY BLOCK
 -- ------------------------------------------------------------
-local FarmTab = Window:Tab({
-    Title = "Auto Farm",
-    Icon  = "trees"
-})
+local TabFarm = MainSection:Tab({ Title = "Auto Farm", Icon = "solar:check-square-bold", Border = true })
 
-FarmTab:Section({ Title = "Lucky Block Farming", TextXAlignment = "Left" })
+TabFarm:Section({ Title = "Kontrol Auto Farm Lucky Block" })
 
-FarmTab:Toggle({
-    Title    = "Auto Farm Lucky Block",
+local FarmStatusPara = TabFarm:Paragraph({ Title = "Status Pengambilan", Desc = "Status: IDLE (Siap)" })
+
+TabFarm:Toggle({
+    Title    = "Aktifkan Auto Farm",
     Desc     = "Teleport, ambil lucky block sesuai filter, dan bawa ke base",
     Value    = FarmConfig.Running,
     Callback = function(state)
@@ -866,11 +1025,11 @@ FarmTab:Toggle({
     end
 })
 
-local RarityDropdown = FarmTab:Dropdown({
+local RarityDropdown = TabFarm:Dropdown({
     Title       = "Filter Rarity Lucky Block",
-    Desc        = "Pilih rarity yang ingin di-farm (Searchable & Multi-select)",
+    Desc        = "Pilih rarity yang ingin di-farm (Searchable & Multi-Select)",
     Values      = RARITY_LIST,
-    Value       = { "Japan", "Icons" },
+    Value       = { "Japan", "Icons", "Spain" },
     Multi       = true,
     AllowNone   = true,
     Callback    = function(selected)
@@ -891,17 +1050,28 @@ local RarityDropdown = FarmTab:Dropdown({
     end
 })
 
-FarmTab:Button({
-    Title    = "Preset: Japan, Icons & Spain",
-    Desc     = "Filter cepat khusus rarity bernilai tinggi",
-    Callback = function()
-        RarityDropdown:Select({ "Japan", "Icons", "Spain" })
-        WindUI:Notify({ Title = "Filter Rarity", Content = "Preset diterapkan!", Duration = 2 })
+TabFarm:Dropdown({
+    Title  = "Preset Rarity Cepat",
+    Desc   = "Ganti kombinasi filter rarity secara instan",
+    Values = {
+        "⭐ Preset: Japan & Icons & Spain",
+        "🔥 Semua Rarity (ALL ON)",
+        "❌ Semua Rarity (ALL OFF)"
+    },
+    Value = "⭐ Preset: Japan & Icons & Spain",
+    Callback = function(preset)
+        if preset:find("Japan") then
+            RarityDropdown:Select({ "Japan", "Icons", "Spain" })
+        elseif preset:find("ALL ON") then
+            RarityDropdown:Select(RARITY_LIST)
+        elseif preset:find("ALL OFF") then
+            RarityDropdown:Select({})
+        end
     end
 })
 
-FarmTab:Button({
-    Title    = "Reset Base Plot Cache",
+TabFarm:Button({
+    Title    = "🔄 Reset Base Plot Cache",
     Desc     = "Gunakan jika posisi plot player berpindah/error",
     Callback = function()
         resetBaseCache()
@@ -909,86 +1079,83 @@ FarmTab:Button({
     end
 })
 
-FarmTab:Section({ Title = "Auto Collect Earnings (Plot 1-50)", TextXAlignment = "Left" })
+TabFarm:Section({ Title = "Auto Collect Earnings (Plot 1-50)" })
 
-FarmTab:Toggle({
+TabFarm:Toggle({
     Title    = "Auto Collect Earnings",
-    Desc     = "Otomatis ambil penghasilan dari Plot 1 sampai 50 secara berkala",
+    Desc     = "Otomatis ambil uang dari Plot 1 sampai 50 secara berkala",
     Value    = EarningsConfig.Running,
     Callback = function(state)
         EarningsConfig.Running = state
         if state then
             startEarningsLoop()
-            WindUI:Notify({ Title = "Collect Earnings", Content = "Auto Collect ON", Duration = 2 })
+            WindUI:Notify({ Title = "Earnings", Content = "Auto Collect ON", Duration = 2 })
         else
             stopEarningsLoop()
-            WindUI:Notify({ Title = "Collect Earnings", Content = "Auto Collect OFF", Duration = 2 })
+            WindUI:Notify({ Title = "Earnings", Content = "Auto Collect OFF", Duration = 2 })
         end
     end
 })
 
-FarmTab:Button({
-    Title    = "Collect 1x Instan",
-    Desc     = "Klaim cash semua plot (1-50) sekarang juga",
+TabFarm:Button({
+    Title    = "💰 Collect 1x Instan (Plot 1-50)",
+    Desc     = "Klaim cash semua plot sekarang juga",
     Callback = function()
         collectEarningsAll(EarningsConfig.MaxPlot)
-        WindUI:Notify({ Title = "Collect Earnings", Content = "Semua plot 1-50 berhasil diklaim!", Duration = 2 })
+        WindUI:Notify({ Title = "Earnings", Content = "Semua plot 1-50 berhasil diklaim!", Duration = 2 })
     end
 })
 
 -- ------------------------------------------------------------
--- [TAB 2] AUTO UPGRADE JUMP
+-- TAB 3: AUTO UPGRADE JUMP
 -- ------------------------------------------------------------
-local JumpTab = Window:Tab({
-    Title = "Jump Upgrade",
-    Icon  = "arrow-up"
-})
+local TabJump = MainSection:Tab({ Title = "Jump Upgrade", Icon = "solar:cursor-square-bold", Border = true })
 
-JumpTab:Section({ Title = "Pengaturan Auto Upgrade Jump", TextXAlignment = "Left" })
+TabJump:Section({ Title = "Kontrol Auto Upgrade Jump" })
 
-JumpTab:Toggle({
-    Title    = "Auto Upgrade Jump",
-    Desc     = "Otomatis upgrade jump level dengan remote code",
+TabJump:Toggle({
+    Title    = "Aktifkan Auto Upgrade Jump",
+    Desc     = "Otomatis beli upgrade jump level dengan remote",
     Value    = JumpConfig.Running,
     Callback = function(state)
         JumpConfig.Running = state
         if state then
             startJumpLoop()
-            WindUI:Notify({ Title = "Upgrade Jump", Content = "Auto Upgrade Jump Dimulai", Duration = 2 })
+            WindUI:Notify({ Title = "Jump Upgrade", Content = "Auto Upgrade Dimulai", Duration = 2 })
         else
             stopJumpLoop()
-            WindUI:Notify({ Title = "Upgrade Jump", Content = "Auto Upgrade Jump Berhenti", Duration = 2 })
+            WindUI:Notify({ Title = "Jump Upgrade", Content = "Auto Upgrade Berhenti", Duration = 2 })
         end
     end
 })
 
-JumpTab:Dropdown({
-    Title     = "Pilih Porsi Upgrade Jump",
-    Desc      = "Pilih porsi upgrade (Auto All akan prioritaskan +10 -> +5 -> +1)",
-    Values    = { "Auto All", "+10 Jump", "+5 Jump", "+1 Jump" },
-    Value     = "Auto All",
-    Multi     = false,
-    Callback  = function(val)
+TabJump:Dropdown({
+    Title    = "Pilih Porsi Upgrade Jump",
+    Desc     = "Auto All akan prioritaskan +10 -> +5 -> +1 sesuai koin",
+    Values   = { "Auto All", "+10 Jump", "+5 Jump", "+1 Jump" },
+    Value    = "Auto All",
+    Multi    = false,
+    Callback = function(val)
         JumpConfig.SelectedTier = val
     end
 })
 
-JumpTab:Toggle({
+TabJump:Toggle({
     Title    = "Smart Coin Protection",
-    Desc     = "Mencegah pembelian jika koin kurang (Anti popup Robux spam)",
+    Desc     = "Mencegah spam popup Robux jika koin tidak mencukupi",
     Value    = JumpConfig.CheckCoin,
     Callback = function(state)
         JumpConfig.CheckCoin = state
     end
 })
 
-JumpTab:Input({
+TabJump:Input({
     Title       = "Jeda Upgrade (Detik)",
-    Desc        = "Waktu tunggu per proses upgrade (default: 0.4)",
+    Desc        = "Waktu tunggu per loop upgrade jump (default: 0.4)",
     Value       = tostring(JumpConfig.Delay),
     Placeholder = "0.4",
-    Callback    = function(text)
-        local val = tonumber(text)
+    Callback    = function(txt)
+        local val = tonumber(txt)
         if val and val >= 0.05 then
             JumpConfig.Delay = val
         end
@@ -996,34 +1163,31 @@ JumpTab:Input({
 })
 
 -- ------------------------------------------------------------
--- [TAB 3] AUTO UPGRADE SOCCER PLAYER (SLIME UPGRADE)
+-- TAB 4: AUTO UPGRADE SOCCER PLAYER
 -- ------------------------------------------------------------
-local SoccerTab = Window:Tab({
-    Title = "Soccer Upgrade",
-    Icon  = "circle-dot"
-})
+local TabSoccer = MainSection:Tab({ Title = "Soccer Upgrade", Icon = "solar:square-transfer-horizontal-bold", Border = true })
 
-SoccerTab:Section({ Title = "Upgrade Soccer Player Plot (1-50)", TextXAlignment = "Left" })
+TabSoccer:Section({ Title = "Kontrol Upgrade Soccer Player" })
 
-SoccerTab:Toggle({
-    Title    = "Auto Upgrade Soccer Player",
+TabSoccer:Toggle({
+    Title    = "Aktifkan Auto Upgrade Soccer",
     Desc     = "Upgrade pemain soccer di plot base secara terus-menerus",
     Value    = SoccerConfig.Running,
     Callback = function(state)
         SoccerConfig.Running = state
         if state then
             startSoccerUpgradeLoop()
-            WindUI:Notify({ Title = "Soccer Upgrade", Content = "Auto Upgrade Soccer Dimulai", Duration = 2 })
+            WindUI:Notify({ Title = "Soccer Player", Content = "Auto Upgrade Dimulai", Duration = 2 })
         else
             stopSoccerUpgradeLoop()
-            WindUI:Notify({ Title = "Soccer Upgrade", Content = "Auto Upgrade Soccer Berhenti", Duration = 2 })
+            WindUI:Notify({ Title = "Soccer Player", Content = "Auto Upgrade Berhenti", Duration = 2 })
         end
     end
 })
 
-SoccerTab:Dropdown({
+TabSoccer:Dropdown({
     Title    = "Target Slot Base Player",
-    Desc     = "Pilih cakupan slot yang akan di-upgrade",
+    Desc     = "Pilih cakupan slot plot yang akan di-upgrade",
     Values   = { "All Slots", "Active Only", "Specific Slot" },
     Value    = "All Slots",
     Multi    = false,
@@ -1032,55 +1196,72 @@ SoccerTab:Dropdown({
     end
 })
 
-SoccerTab:Slider({
+TabSoccer:Slider({
     Title    = "Nomor Slot Spesifik",
-    Desc     = "Digunakan saat mode 'Specific Slot' dipilih",
-    Value    = SoccerConfig.SpecificSlot,
-    Min      = 1,
-    Max      = 50,
+    Desc     = "Hanya aktif jika mode 'Specific Slot' dipilih",
     Step     = 1,
+    Value    = { Min = 1, Max = 50, Default = SoccerConfig.SpecificSlot },
     Callback = function(val)
         SoccerConfig.SpecificSlot = math.floor(val)
     end
 })
 
-SoccerTab:Input({
+TabSoccer:Input({
     Title       = "Jeda Upgrade Slot (Detik)",
-    Desc        = "Waktu tunggu per slot upgrade (default: 0.25)",
+    Desc        = "Waktu tunggu per proses upgrade slot (default: 0.25)",
     Value       = tostring(SoccerConfig.Delay),
     Placeholder = "0.25",
-    Callback    = function(text)
-        local val = tonumber(text)
+    Callback    = function(txt)
+        local val = tonumber(txt)
         if val and val >= 0.05 then
             SoccerConfig.Delay = val
         end
     end
 })
 
-SoccerTab:Button({
-    Title    = "Upgrade All Slots 1x",
-    Desc     = "Trigger upgrade untuk semua slot 1 s/d 50 sekaligus",
+TabSoccer:Button({
+    Title    = "⚡ UPGRADE ALL SLOTS 1X (1 s/d 50)",
+    Desc     = "Upgrade semua slot base secara instan satu kali",
     Callback = function()
         for i = 1, SoccerConfig.MaxSlots do
             upgradeSingleSlot(i)
         end
-        WindUI:Notify({ Title = "Soccer Upgrade", Content = "Semua slot 1-50 berhasil diupgrade 1x!", Duration = 2 })
+        WindUI:Notify({ Title = "Soccer Player", Content = "Semua slot 1-50 berhasil diupgrade 1x!", Duration = 2 })
     end
 })
 
 -- ------------------------------------------------------------
--- [TAB 4] PLAYER MENU (NOTIFICATIONS & MOVEMENT)
+-- TAB 5: STATS & SESSION
 -- ------------------------------------------------------------
-local PlayerTab = Window:Tab({
-    Title = "Player",
-    Icon  = "user"
+local TabStats = MainSection:Tab({ Title = "Stats & Sesi", Icon = "solar:file-text-bold", Border = true })
+
+TabStats:Section({ Title = "Statistik Sesi Permainan" })
+
+local SessionStatsPara = TabStats:Paragraph({
+    Title = "⏱️ Waktu Sesi & Rate",
+    Desc  = "Durasi: 00:00:00 | Terkumpul: 0 Block"
 })
 
-PlayerTab:Section({ Title = "Game UI & Notifications", TextXAlignment = "Left" })
+local UpgradesStatsPara = TabStats:Paragraph({
+    Title = "📊 Total Upgrade Berhasil",
+    Desc  = "Jump Upgrades: 0 Kali\nSoccer Upgrades: 0 Kali\nEarnings Collected: 0 Kali"
+})
 
-PlayerTab:Toggle({
+-- ============================================================
+--  UTILITIES SECTION
+-- ============================================================
+local UtilitySection = Window:Section({ Title = "Utilities" })
+
+-- ------------------------------------------------------------
+-- TAB 6: PLAYER & MOVEMENT
+-- ------------------------------------------------------------
+local TabPlayer = UtilitySection:Tab({ Title = "Player", Icon = "solar:password-minimalistic-input-bold", Border = true })
+
+TabPlayer:Section({ Title = "Game UI & Notifications" })
+
+TabPlayer:Toggle({
     Title    = "Disable Game Notifications",
-    Desc     = "Sembunyikan semua popup notifikasi, banner, dan announcement dalam game",
+    Desc     = "Sembunyikan semua popup notifikasi dan banner bawaan game",
     Value    = PlayerConfig.DisableNotifications,
     Callback = function(state)
         PlayerConfig.DisableNotifications = state
@@ -1093,71 +1274,110 @@ PlayerTab:Toggle({
     end
 })
 
-PlayerTab:Section({ Title = "Fly System", TextXAlignment = "Left" })
+TabPlayer:Section({ Title = "WalkSpeed Modifier" })
 
-PlayerTab:Toggle({
-    Title    = "Aktifkan Fly",
-    Desc     = "Gunakan WASD untuk arah, Spacebar (Naik), Left Ctrl (Turun)",
-    Value    = PlayerConfig.FlyEnabled,
-    Callback = function(state)
-        PlayerConfig.FlyEnabled = state
-        if state then
-            startFly()
-            WindUI:Notify({ Title = "Fly System", Content = "Fly Mode: ON", Duration = 2 })
-        else
-            stopFly()
-            WindUI:Notify({ Title = "Fly System", Content = "Fly Mode: OFF", Duration = 2 })
+TabPlayer:Toggle({
+    Title    = "Aktifkan WalkSpeed",
+    Desc     = "Ubah kecepatan berjalan karakter",
+    Value    = PlayerConfig.WalkSpeedEnabled,
+    Callback = function(st)
+        PlayerConfig.WalkSpeedEnabled = st
+        if not st and LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+            LocalPlayer.Character:FindFirstChildOfClass("Humanoid").WalkSpeed = PlayerConfig.DefaultWalkSpeed
         end
     end
 })
 
-local FlySpeedSlider = PlayerTab:Slider({
-    Title    = "Fly Speed",
-    Desc     = "Kecepatan pergerakan terbang (studs/detik)",
-    Value    = PlayerConfig.FlySpeed,
-    Min      = 1,
-    Max      = 500,
-    Step     = 1,
-    Callback = function(val)
-        PlayerConfig.FlySpeed = val
+TabPlayer:Slider({
+    Title    = "Kecepatan Lari",
+    Step     = 5,
+    Value    = { Min = 16, Max = 250, Default = PlayerConfig.WalkSpeedValue },
+    Callback = function(v) PlayerConfig.WalkSpeedValue = v end
+})
+
+TabPlayer:Section({ Title = "FlyHigh (Terbang Bebas)" })
+
+TabPlayer:Toggle({
+    Title    = "Aktifkan FlyHigh",
+    Desc     = "Gunakan WASD, Space (Naik), Shift/Ctrl (Turun)",
+    Value    = PlayerConfig.FlyEnabled,
+    Callback = function(st)
+        PlayerConfig.FlyEnabled = st
+        if st then startFly() else stopFly() end
     end
 })
 
-PlayerTab:Section({ Title = "Fly Speed Presets", TextXAlignment = "Left" })
-
-PlayerTab:Button({
-    Title    = "Speed 30 (Slow)",
-    Callback = function()
-        FlySpeedSlider:Set(30)
-    end
+TabPlayer:Slider({
+    Title    = "Kecepatan Terbang",
+    Step     = 5,
+    Value    = { Min = 20, Max = 300, Default = PlayerConfig.FlySpeed },
+    Callback = function(v) PlayerConfig.FlySpeed = v end
 })
 
-PlayerTab:Button({
-    Title    = "Speed 60 (Normal)",
-    Callback = function()
-        FlySpeedSlider:Set(60)
-    end
-})
+-- ============================================================
+--  BACKGROUND STATS & LIVE TICKER
+-- ============================================================
+task.spawn(function()
+    while true do
+        local elapsed = os.time() - ScriptStartTime
+        local h = math.floor(elapsed / 3600); local m = math.floor((elapsed % 3600) / 60); local s = elapsed % 60
+        local timeString = os.date("%X")
 
-PlayerTab:Button({
-    Title    = "Speed 150 (Fast)",
-    Callback = function()
-        FlySpeedSlider:Set(150)
-    end
-})
+        -- Update Game Info
+        GameInfoPara:SetDesc(string.format(
+            "Game: Soccer 380\nPlace ID: %d\nSession Time: %dm %ds\nJam (Waktu): %s\nKoin Player: %s",
+            game.PlaceId,
+            math.floor(elapsed / 60),
+            s,
+            timeString,
+            formatNumberShort(getPlayerCash())
+        ))
 
-PlayerTab:Button({
-    Title    = "Speed 300 (Ultra)",
-    Callback = function()
-        FlySpeedSlider:Set(300)
+        -- Update Status Farm
+        if FarmConfig.Running then
+            FarmStatusPara:SetDesc(string.format(
+                "Status: %s\nTotal Terkumpul: %d Block | Terakhir: %s [%s]",
+                Stats.StatusText,
+                Stats.FarmBlocksCount,
+                Stats.LastBlockName,
+                Stats.LastBlockRarity
+            ))
+        else
+            FarmStatusPara:SetDesc("Status: IDLE (Dihentikan)")
+        end
+
+        -- Update Sesi & Rate
+        if Stats.SessionStartTime and FarmConfig.Running then
+            local cElapsed = os.time() - Stats.SessionStartTime
+            local ch = math.floor(cElapsed / 3600); local cm = math.floor((cElapsed % 3600) / 60); local cs = cElapsed % 60
+            local rate = (cElapsed > 0) and math.floor((Stats.FarmBlocksCount / (cElapsed / 60)) * 10) / 10 or 0
+            SessionStatsPara:SetDesc(string.format(
+                "Durasi: %02d:%02d:%02d | Kecepatan: %.1f block/mnt | Total: %d Block",
+                ch, cm, cs, rate, Stats.FarmBlocksCount
+            ))
+        else
+            SessionStatsPara:SetDesc(string.format("Durasi: %02d:%02d:%02d | Total: %d Block", h, m, s, Stats.FarmBlocksCount))
+        end
+
+        -- Update Total Upgrades
+        UpgradesStatsPara:SetDesc(string.format(
+            "Jump Upgrades: %d Kali (Level: %d)\nSoccer Upgrades: %d Kali\nEarnings Collected: %d Kali",
+            JumpConfig.UpgradedCount,
+            getPlayerJumpLevel(),
+            SoccerConfig.TotalUpgrades,
+            EarningsConfig.TotalCollectCount
+        ))
+
+        task.wait(1)
     end
-})
+end)
 
 -- ============================================================
 --  NOTIFICATION LOADED
 -- ============================================================
 WindUI:Notify({
-    Title    = "Soccer 380 Hub",
-    Content  = "Soccer 380 Script Berhasil Dimuat via Loader!",
-    Duration = 4
+    Title    = "CROTTT HUB Dimuat!",
+    Content  = "Soccer 380 siap digunakan. Klik logo TikTok untuk buka/tutup menu.",
+    Duration = 4,
+    Icon     = CUSTOM_LOGO
 })
