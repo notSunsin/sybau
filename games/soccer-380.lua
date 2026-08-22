@@ -1063,7 +1063,7 @@ TabCollect:Input({
 -- ============================================================
 --  DROPDOWN FILTER BY RARITY (SEARCH BAR + SELECT ALL / REMOVE ALL)
 -- ============================================================
-TabCollect:Section({ Title = "Filter by Rarity (Soccer 380 Codebase)" })
+TabCollect:Section({ Title = "Filter by Rarity" })
 
 local RarityDropdown = nil
 
