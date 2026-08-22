@@ -966,7 +966,7 @@ TabCollect:Input({
     end
 })
 
-TabCollect:Section({ Title = "Filter by Rarity (Mine a Mountain Codebase)" })
+TabCollect:Section({ Title = "Filter by Rarity" })
 
 TabCollect:Dropdown({
     Title = "Preset Rarity Cepat",
