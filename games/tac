@@ -1,0 +1,104 @@
+--[[
+    ========================================================================
+    TAC (Throw a Coin) - WindUI Mobile Edition
+    Author: HUKI (Delta Roblox Mobile & PC)
+    UI Library: WindUI
+    ========================================================================
+    Active Features:
+      1. 🛡️ Anti-AFK Protection (Delta Mobile 20m Kick Bypass)
+      2. ⭐ Bypass Gamepass VIP (NoClip VIP Doors + 0s ProximityPrompts)
+      3. 🍀 Bypass Gamepass More Luck (2x Luck Multiplier)
+      4. 🔮 Bypass Gamepass Insane Luck (Ultra Luck Multiplier)
+      5. ⚡ Universal MarketplaceService Metamethod Spoofing
+      6. 📱 WindUI Mobile Draggable & Floating Toggle Support
+    ========================================================================
+]]
+
+-- ============================================================
+--  SERVICES & PLAYER
+-- ============================================================
+local Players               = game:GetService("Players")
+local ReplicatedStorage     = game:GetService("ReplicatedStorage")
+local RunService            = game:GetService("RunService")
+local MarketplaceService    = game:GetService("MarketplaceService")
+local VirtualUser           = game:GetService("VirtualUser")
+
+local LocalPlayer = Players.LocalPlayer
+
+-- ============================================================
+--  CONFIG & STATE
+-- ============================================================
+local Config = {
+    AntiAFKEnabled          = true,
+    VIPBypassEnabled        = true,
+    MoreLuckEnabled         = true,
+    InsaneLuckEnabled       = true,
+    UnlockVIPDoors          = true,
+    InstantPrompts          = true,
+}
+
+-- ============================================================
+--  FEATURE 1: ANTI-AFK ENGINE (DELTA MOBILE)
+-- ============================================================
+local function initAntiAFK()
+    LocalPlayer.Idled:Connect(function()
+        if Config.AntiAFKEnabled then
+            pcall(function()
+                VirtualUser:CaptureController()
+                VirtualUser:ClickButton2(Vector2.new(0, 0))
+            end)
+        end
+    end)
+    
+    task.spawn(function()
+        while true do
+            task.wait(240)
+            if Config.AntiAFKEnabled then
+                pcall(function()
+                    VirtualUser:CaptureController()
+                    VirtualUser:ClickButton2(Vector2.new(0, 0))
+                end)
+            end
+        end
+    end)
+end
+
+initAntiAFK()
+
+-- ============================================================
+--  FEATURE 2: GAMEPASS BYPASSES ENGINE
+-- ============================================================
+local function applyAllGamepassBypasses()
+    -- 1. Metamethod Hook MarketplaceService
+    pcall(function()
+        if not _G.GamepassHookApplied and hookfunction and hookmetamethod then
+            _G.GamepassHookApplied = true
+            local oldNamecall
+            oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+                local method = getnamecallmethod()
+                if self == MarketplaceService and (method == "UserOwnsGamePassAsync" or method == "PlayerOwnsAsset") then
+                    return true
+                end
+                return oldNamecall(self, ...)
+            end))
+        end
+    end)
+    
+    -- 2. Client Attributes & Values Spoofing
+    pcall(function()
+        if Config.VIPBypassEnabled then
+            LocalPlayer:SetAttribute("VIP", true)
+            LocalPlayer:SetAttribute("HasVIP", true)
+            LocalPlayer:SetAttribute("Gamepass_VIP", true)
+        end
+        
+        if Config.MoreLuckEnabled then
+            LocalPlayer:SetAttribute("MoreLuck", true)
+            LocalPlayer:SetAttribute("HasMoreLuck", true)
+            LocalPlayer:SetAttribute("ExtraLuck", true)
+            LocalPlayer:SetAttribute("Gamepass_MoreLuck", true)
+        end
+        
+        if Config.InsaneLuckEnabled then
+            LocalPlayer:SetAttribute("InsaneLuck", true)
+            L
