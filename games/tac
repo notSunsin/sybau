@@ -1,8 +1,7 @@
 --[[
     ========================================================================
-    TAC (Throw a Coin) - WindUI Mobile Edition
-    Author: HUKI (Delta Roblox Mobile & PC)
-    UI Library: WindUI
+    TAC (Throw a Coin) - Mobile & Delta Edition
+    Author: HUKI (Universal Fail-Safe UI for Delta Roblox Mobile & PC)
     ========================================================================
     Active Features:
       1. 🛡️ Anti-AFK Protection (Delta Mobile 20m Kick Bypass)
@@ -10,7 +9,7 @@
       3. 🍀 Bypass Gamepass More Luck (2x Luck Multiplier)
       4. 🔮 Bypass Gamepass Insane Luck (Ultra Luck Multiplier)
       5. ⚡ Universal MarketplaceService Metamethod Spoofing
-      6. 📱 WindUI Mobile Draggable & Floating Toggle Support
+      6. 📱 100% Fail-Safe UI (Mendukung WindUI + Native Delta Fallback)
     ========================================================================
 ]]
 
@@ -20,10 +19,29 @@
 local Players               = game:GetService("Players")
 local ReplicatedStorage     = game:GetService("ReplicatedStorage")
 local RunService            = game:GetService("RunService")
+local TweenService          = game:GetService("TweenService")
+local UserInputService      = game:GetService("UserInputService")
 local MarketplaceService    = game:GetService("MarketplaceService")
 local VirtualUser           = game:GetService("VirtualUser")
+local CoreGui               = game:GetService("CoreGui")
 
 local LocalPlayer = Players.LocalPlayer
+local PlayerGui   = LocalPlayer:WaitForChild("PlayerGui", 10)
+
+local function getSafeUIParent()
+    local success, target = pcall(function()
+        if gethui then return gethui() end
+        if syn and syn.protect_gui then
+            local g = Instance.new("Folder")
+            syn.protect_gui(g)
+            g.Parent = CoreGui
+            return g
+        end
+        return CoreGui
+    end)
+    if success and target then return target end
+    return PlayerGui
+end
 
 -- ============================================================
 --  CONFIG & STATE
@@ -37,8 +55,21 @@ local Config = {
     InstantPrompts          = true,
 }
 
+local State = {
+    Logs = {},
+}
+
+local function addLog(msg)
+    local timestamp = os.date("%X")
+    local entry = string.format("[%s] %s", timestamp, msg)
+    table.insert(State.Logs, 1, entry)
+    if #State.Logs > 60 then
+        table.remove(State.Logs)
+    end
+end
+
 -- ============================================================
---  FEATURE 1: ANTI-AFK ENGINE (DELTA MOBILE)
+--  FEATURE 1: UNIVERSAL ANTI-AFK (DELTA MOBILE + PC)
 -- ============================================================
 local function initAntiAFK()
     LocalPlayer.Idled:Connect(function()
@@ -47,6 +78,7 @@ local function initAntiAFK()
                 VirtualUser:CaptureController()
                 VirtualUser:ClickButton2(Vector2.new(0, 0))
             end)
+            addLog("🛡️ Anti-AFK: Prevented idle kick!")
         end
     end)
     
@@ -69,7 +101,6 @@ initAntiAFK()
 --  FEATURE 2: GAMEPASS BYPASSES ENGINE
 -- ============================================================
 local function applyAllGamepassBypasses()
-    -- 1. Metamethod Hook MarketplaceService
     pcall(function()
         if not _G.GamepassHookApplied and hookfunction and hookmetamethod then
             _G.GamepassHookApplied = true
@@ -84,7 +115,6 @@ local function applyAllGamepassBypasses()
         end
     end)
     
-    -- 2. Client Attributes & Values Spoofing
     pcall(function()
         if Config.VIPBypassEnabled then
             LocalPlayer:SetAttribute("VIP", true)
@@ -101,4 +131,586 @@ local function applyAllGamepassBypasses()
         
         if Config.InsaneLuckEnabled then
             LocalPlayer:SetAttribute("InsaneLuck", true)
-            L
+            LocalPlayer:SetAttribute("HasInsaneLuck", true)
+            LocalPlayer:SetAttribute("UltraLuck", true)
+            LocalPlayer:SetAttribute("Gamepass_InsaneLuck", true)
+        end
+        
+        local calculatedLuck = 1
+        if Config.MoreLuckEnabled then calculatedLuck = calculatedLuck * 2 end
+        if Config.InsaneLuckEnabled then calculatedLuck = calculatedLuck * 5 end
+        if calculatedLuck > 1 then
+            LocalPlayer:SetAttribute("LuckMultiplier", calculatedLuck)
+            LocalPlayer:SetAttribute("Luck", calculatedLuck)
+            LocalPlayer:SetAttribute("TotalLuck", calculatedLuck)
+        end
+        
+        local searchFolders = {
+            LocalPlayer:FindFirstChild("Data"),
+            LocalPlayer:FindFirstChild("Values"),
+            LocalPlayer:FindFirstChild("Gamepasses"),
+            LocalPlayer:FindFirstChild("Passes"),
+            LocalPlayer:FindFirstChild("Stats"),
+            LocalPlayer:FindFirstChild("leaderstats"),
+        }
+        
+        for _, folder in ipairs(searchFolders) do
+            if folder then
+                for _, v in ipairs(folder:GetChildren()) do
+                    local vName = v.Name:lower()
+                    if Config.VIPBypassEnabled and string.find(vName, "vip") then
+                        if v:IsA("BoolValue") then v.Value = true end
+                    end
+                    if Config.MoreLuckEnabled and (string.find(vName, "moreluck") or string.find(vName, "extraluck")) then
+                        if v:IsA("BoolValue") then v.Value = true end
+                    end
+                    if Config.InsaneLuckEnabled and (string.find(vName, "insaneluck") or string.find(vName, "ultraluck")) then
+                        if v:IsA("BoolValue") then v.Value = true end
+                    end
+                    if (Config.MoreLuckEnabled or Config.InsaneLuckEnabled) and (string.find(vName, "luck") or string.find(vName, "luckmultiplier")) then
+                        if v:IsA("NumberValue") or v:IsA("IntValue") then
+                            v.Value = calculatedLuck
+                        end
+                    end
+                end
+            end
+        end
+    end)
+    
+    if Config.VIPBypassEnabled and Config.UnlockVIPDoors then
+        pcall(function()
+            for _, obj in ipairs(workspace:GetDescendants()) do
+                if obj:IsA("BasePart") then
+                    local name = obj.Name:lower()
+                    local parentName = obj.Parent and obj.Parent.Name:lower() or ""
+                    if string.find(name, "vip") or string.find(parentName, "vip") or string.find(name, "door") or string.find(name, "gate") or string.find(name, "barrier") then
+                        if string.find(name, "vip") or string.find(parentName, "vip") then
+                            obj.CanCollide = false
+                            if obj.Transparency < 0.5 then
+                                obj.Transparency = 0.5
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+    end
+    
+    if Config.InstantPrompts then
+        pcall(function()
+            for _, prompt in ipairs(workspace:GetDescendants()) do
+                if prompt:IsA("ProximityPrompt") then
+                    prompt.HoldDuration = 0
+                    prompt.RequiresLineOfSight = false
+                    if prompt.MaxActivationDistance < 30 then
+                        prompt.MaxActivationDistance = 30
+                    end
+                end
+            end
+        end)
+    end
+end
+
+task.spawn(function()
+    while true do
+        applyAllGamepassBypasses()
+        task.wait(2.5)
+    end
+end)
+
+-- ============================================================
+--  TOUCH DRAGGABLE HELPER
+-- ============================================================
+local function makeDraggable(frame, dragHandle)
+    dragHandle = dragHandle or frame
+    local dragging = false
+    local dragInput = nil
+    local dragStart = nil
+    local startPos = nil
+    
+    local function update(input)
+        local delta = input.Position - dragStart
+        local newX = startPos.X.Offset + delta.X
+        local newY = startPos.Y.Offset + delta.Y
+        
+        local cam = workspace.CurrentCamera
+        local screenSize = cam and cam.ViewportSize or Vector2.new(1280, 720)
+        newX = math.clamp(newX, 5, screenSize.X - frame.AbsoluteSize.X - 5)
+        newY = math.clamp(newY, 5, screenSize.Y - frame.AbsoluteSize.Y - 5)
+        
+        frame.Position = UDim2.new(0, newX, 0, newY)
+    end
+    
+    dragHandle.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = frame.Position
+            
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
+    end)
+    
+    dragHandle.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            dragInput = input
+        end
+    end)
+    
+    UserInputService.InputChanged:Connect(function(input)
+        if input == dragInput and dragging then
+            update(input)
+        end
+    end)
+end
+
+-- ============================================================
+--  UI BUILDER: WINDUI WITH AUTO FAIL-SAFE NATIVE FALLBACK
+-- ============================================================
+local function buildNativeMobileUI()
+    local uiParent = getSafeUIParent()
+    
+    do
+        local existingGuis = {
+            uiParent:FindFirstChild("TacDeltaSuiteGUI"),
+            PlayerGui:FindFirstChild("TacDeltaSuiteGUI"),
+            PlayerGui:FindFirstChild("TacGamepassSuiteGUI"),
+        }
+        for _, g in ipairs(existingGuis) do if g then g:Destroy() end end
+    end
+    
+    local ScreenGui = Instance.new("ScreenGui")
+    ScreenGui.Name = "TacDeltaSuiteGUI"
+    ScreenGui.ResetOnSpawn = false
+    ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    ScreenGui.Parent = uiParent
+    
+    local C = {
+        BG          = Color3.fromRGB(15, 16, 24),
+        HEADER      = Color3.fromRGB(22, 24, 38),
+        CARD        = Color3.fromRGB(24, 27, 42),
+        CARD_HOVER  = Color3.fromRGB(32, 36, 56),
+        ACCENT      = Color3.fromRGB(115, 88, 255),
+        GOLD        = Color3.fromRGB(255, 200, 55),
+        PURPLE      = Color3.fromRGB(192, 132, 252),
+        GREEN       = Color3.fromRGB(34, 197, 94),
+        CYAN        = Color3.fromRGB(6, 182, 212),
+        TEXT        = Color3.fromRGB(241, 245, 249),
+        TEXT_MUTED  = Color3.fromRGB(148, 163, 184),
+        BORDER      = Color3.fromRGB(45, 49, 72),
+    }
+    
+    local function mkCorner(parent, radius)
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(0, radius or 8)
+        corner.Parent = parent
+        return corner
+    end
+    
+    local function mkStroke(parent, color, thickness)
+        local stroke = Instance.new("UIStroke")
+        stroke.Color = color or C.BORDER
+        stroke.Thickness = thickness or 1
+        stroke.Parent = parent
+        return stroke
+    end
+    
+    -- Floating Mobile Toggle Button (⭐)
+    local FloatingToggleBtn = Instance.new("ImageButton")
+    FloatingToggleBtn.Name = "FloatingToggleBtn"
+    FloatingToggleBtn.Size = UDim2.new(0, 48, 0, 48)
+    FloatingToggleBtn.Position = UDim2.new(0, 16, 0.35, 0)
+    FloatingToggleBtn.BackgroundColor3 = C.HEADER
+    FloatingToggleBtn.AutoButtonColor = false
+    FloatingToggleBtn.Parent = ScreenGui
+    mkCorner(FloatingToggleBtn, 24)
+    mkStroke(FloatingToggleBtn, C.GOLD, 1.8)
+    
+    local FloatingIcon = Instance.new("TextLabel")
+    FloatingIcon.Size = UDim2.new(1, 0, 1, 0)
+    FloatingIcon.BackgroundTransparency = 1
+    FloatingIcon.Text = "⭐"
+    FloatingIcon.TextSize = 22
+    FloatingIcon.Font = Enum.Font.GothamBold
+    FloatingIcon.Parent = FloatingToggleBtn
+    
+    makeDraggable(FloatingToggleBtn)
+    
+    -- Main Window
+    local MainFrame = Instance.new("Frame")
+    MainFrame.Name = "MainFrame"
+    MainFrame.Size = UDim2.new(0, 340, 0, 430)
+    MainFrame.Position = UDim2.new(0, 72, 0.5, -215)
+    MainFrame.BackgroundColor3 = C.BG
+    MainFrame.BorderSizePixel = 0
+    MainFrame.Active = true
+    MainFrame.ClipsDescendants = true
+    MainFrame.Parent = ScreenGui
+    mkCorner(MainFrame, 12)
+    mkStroke(MainFrame, C.BORDER, 1.5)
+    
+    local uiScale = Instance.new("UIScale")
+    local cam = workspace.CurrentCamera
+    local screenHeight = cam and cam.ViewportSize.Y or 720
+    if screenHeight < 500 then
+        uiScale.Scale = math.clamp(screenHeight / 520, 0.75, 1.0)
+    end
+    uiScale.Parent = MainFrame
+    
+    local Header = Instance.new("Frame")
+    Header.Name = "Header"
+    Header.Size = UDim2.new(1, 0, 0, 44)
+    Header.BackgroundColor3 = C.HEADER
+    Header.BorderSizePixel = 0
+    Header.Parent = MainFrame
+    mkCorner(Header, 12)
+    
+    local HeaderCover = Instance.new("Frame")
+    HeaderCover.Size = UDim2.new(1, 0, 0, 12)
+    HeaderCover.Position = UDim2.new(0, 0, 1, -12)
+    HeaderCover.BackgroundColor3 = C.HEADER
+    HeaderCover.BorderSizePixel = 0
+    HeaderCover.Parent = Header
+    
+    local HeaderTitle = Instance.new("TextLabel")
+    HeaderTitle.Size = UDim2.new(1, -95, 1, 0)
+    HeaderTitle.Position = UDim2.new(0, 12, 0, 0)
+    HeaderTitle.BackgroundTransparency = 1
+    HeaderTitle.Text = "⭐ TAC - Passes & Anti-AFK"
+    HeaderTitle.TextColor3 = C.TEXT
+    HeaderTitle.TextSize = 12
+    HeaderTitle.Font = Enum.Font.GothamBold
+    HeaderTitle.TextXAlignment = Enum.TextXAlignment.Left
+    HeaderTitle.Parent = Header
+    
+    local SubTitle = Instance.new("TextLabel")
+    SubTitle.Size = UDim2.new(0, 50, 1, 0)
+    SubTitle.Position = UDim2.new(1, -85, 0, 0)
+    SubTitle.BackgroundTransparency = 1
+    SubTitle.Text = "Delta"
+    SubTitle.TextColor3 = C.GOLD
+    SubTitle.TextSize = 10
+    SubTitle.Font = Enum.Font.GothamBold
+    SubTitle.TextXAlignment = Enum.TextXAlignment.Right
+    SubTitle.Parent = Header
+    
+    local CloseBtn = Instance.new("TextButton")
+    CloseBtn.Size = UDim2.new(0, 26, 0, 26)
+    CloseBtn.Position = UDim2.new(1, -32, 0.5, -13)
+    CloseBtn.BackgroundColor3 = C.CARD
+    CloseBtn.Text = "✕"
+    CloseBtn.TextColor3 = C.TEXT_MUTED
+    CloseBtn.TextSize = 11
+    CloseBtn.Font = Enum.Font.GothamBold
+    CloseBtn.Parent = Header
+    mkCorner(CloseBtn, 6)
+    mkStroke(CloseBtn, C.BORDER, 1)
+    
+    local isVisible = true
+    local function toggleMenu()
+        isVisible = not isVisible
+        MainFrame.Visible = isVisible
+        TweenService:Create(FloatingToggleBtn, TweenInfo.new(0.15), {
+            BackgroundColor3 = isVisible and C.HEADER or C.CARD_HOVER
+        }):Play()
+    end
+    
+    CloseBtn.Activated:Connect(toggleMenu)
+    FloatingToggleBtn.Activated:Connect(toggleMenu)
+    makeDraggable(MainFrame, Header)
+    
+    local Content = Instance.new("ScrollingFrame")
+    Content.Name = "Content"
+    Content.Size = UDim2.new(1, -14, 1, -52)
+    Content.Position = UDim2.new(0, 7, 0, 48)
+    Content.BackgroundTransparency = 1
+    Content.BorderSizePixel = 0
+    Content.ScrollBarThickness = 4
+    Content.ScrollBarImageColor3 = Color3.fromRGB(70, 76, 110)
+    Content.CanvasSize = UDim2.new(0, 0, 0, 470)
+    Content.Parent = MainFrame
+    
+    local ContentLayout = Instance.new("UIListLayout")
+    ContentLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    ContentLayout.Padding = UDim.new(0, 7)
+    ContentLayout.Parent = Content
+    
+    -- Status Banner
+    local StatusCard = Instance.new("Frame")
+    StatusCard.Size = UDim2.new(1, 0, 0, 32)
+    StatusCard.BackgroundColor3 = C.CARD
+    StatusCard.LayoutOrder = 1
+    StatusCard.Parent = Content
+    mkCorner(StatusCard, 8)
+    mkStroke(StatusCard, C.BORDER, 1)
+    
+    local StatusLbl = Instance.new("TextLabel")
+    StatusLbl.Size = UDim2.new(1, -12, 1, 0)
+    StatusLbl.Position = UDim2.new(0, 6, 0, 0)
+    StatusLbl.BackgroundTransparency = 1
+    StatusLbl.Text = "● Status: Delta Mobile Active"
+    StatusLbl.TextColor3 = C.GREEN
+    StatusLbl.TextSize = 10
+    StatusLbl.Font = Enum.Font.GothamBold
+    StatusLbl.TextXAlignment = Enum.TextXAlignment.Left
+    StatusLbl.Parent = StatusCard
+    
+    local function mkToggleCard(title, desc, initial, onToggle, order, accentColor)
+        local card = Instance.new("TextButton")
+        card.Size = UDim2.new(1, 0, 0, 48)
+        card.BackgroundColor3 = C.CARD
+        card.AutoButtonColor = false
+        card.Text = ""
+        card.LayoutOrder = order or 10
+        card.Parent = Content
+        mkCorner(card, 8)
+        local activeCol = accentColor or C.ACCENT
+        local stroke = mkStroke(card, initial and activeCol or C.BORDER, 1)
+        
+        local t = Instance.new("TextLabel")
+        t.Size = UDim2.new(1, -55, 0, 18)
+        t.Position = UDim2.new(0, 10, 0, 6)
+        t.BackgroundTransparency = 1
+        t.Text = title
+        t.TextColor3 = C.TEXT
+        t.TextSize = 11
+        t.Font = Enum.Font.GothamBold
+        t.TextXAlignment = Enum.TextXAlignment.Left
+        t.Parent = card
+        
+        local d = Instance.new("TextLabel")
+        d.Size = UDim2.new(1, -55, 0, 16)
+        d.Position = UDim2.new(0, 10, 0, 24)
+        d.BackgroundTransparency = 1
+        d.Text = desc
+        d.TextColor3 = C.TEXT_MUTED
+        d.TextSize = 9
+        d.Font = Enum.Font.Gotham
+        d.TextXAlignment = Enum.TextXAlignment.Left
+        d.Parent = card
+        
+        local sw = Instance.new("Frame")
+        sw.Size = UDim2.new(0, 36, 0, 20)
+        sw.Position = UDim2.new(1, -44, 0.5, -10)
+        sw.BackgroundColor3 = initial and C.GREEN or C.BORDER
+        sw.Parent = card
+        mkCorner(sw, 10)
+        
+        local knob = Instance.new("Frame")
+        knob.Size = UDim2.new(0, 16, 0, 16)
+        knob.Position = initial and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)
+        knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+        knob.Parent = sw
+        mkCorner(knob, 8)
+        
+        local state = initial
+        local function set(newState)
+            state = newState
+            local targetColor = state and C.GREEN or C.BORDER
+            local targetKnobPos = state and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)
+            TweenService:Create(sw, TweenInfo.new(0.15), { BackgroundColor3 = targetColor }):Play()
+            TweenService:Create(knob, TweenInfo.new(0.15), { Position = targetKnobPos }):Play()
+            stroke.Color = state and activeCol or C.BORDER
+            onToggle(state)
+        end
+        
+        card.Activated:Connect(function() set(not state) end)
+        return { Set = set, Get = function() return state end }
+    end
+    
+    mkToggleCard("🛡️ Anti-AFK Protection", "Mencegah kick AFK 20 menit di Delta Mobile", Config.AntiAFKEnabled, function(v)
+        Config.AntiAFKEnabled = v
+        addLog("Anti-AFK: " .. (v and "ACTIVE" or "OFF"))
+    end, 2, C.CYAN)
+    
+    mkToggleCard("⭐ Bypass Gamepass VIP", "Buka pintu area VIP & hilangkan hold proximity", Config.VIPBypassEnabled, function(v)
+        Config.VIPBypassEnabled = v
+        applyAllGamepassBypasses()
+        addLog("VIP Gamepass: " .. (v and "ACTIVE" or "OFF"))
+    end, 3, C.GOLD)
+    
+    mkToggleCard("🍀 Bypass More Luck (2x Luck)", "Meningkatkan multiplier keberuntungan lemparan", Config.MoreLuckEnabled, function(v)
+        Config.MoreLuckEnabled = v
+        applyAllGamepassBypasses()
+        addLog("More Luck: " .. (v and "ACTIVE (2x Luck)" or "OFF"))
+    end, 4, C.GREEN)
+    
+    mkToggleCard("🔮 Bypass Insane Luck (Ultra Luck)", "Multiplier keberuntungan super tinggi", Config.InsaneLuckEnabled, function(v)
+        Config.InsaneLuckEnabled = v
+        applyAllGamepassBypasses()
+        addLog("Insane Luck: " .. (v and "ACTIVE (INSANE LUCK)" or "OFF"))
+    end, 5, C.PURPLE)
+    
+    local LogCard = Instance.new("Frame")
+    LogCard.Size = UDim2.new(1, 0, 0, 110)
+    LogCard.BackgroundColor3 = C.CARD
+    LogCard.LayoutOrder = 6
+    LogCard.Parent = Content
+    mkCorner(LogCard, 8)
+    mkStroke(LogCard, C.BORDER, 1)
+    
+    local LogTitle = Instance.new("TextLabel")
+    LogTitle.Size = UDim2.new(1, -16, 0, 16)
+    LogTitle.Position = UDim2.new(0, 8, 0, 4)
+    LogTitle.BackgroundTransparency = 1
+    LogTitle.Text = "📝 Activity Logs"
+    LogTitle.TextColor3 = C.TEXT_MUTED
+    LogTitle.TextSize = 10
+    LogTitle.Font = Enum.Font.GothamBold
+    LogTitle.TextXAlignment = Enum.TextXAlignment.Left
+    LogTitle.Parent = LogCard
+    
+    local LogScroll = Instance.new("ScrollingFrame")
+    LogScroll.Size = UDim2.new(1, -16, 0, 84)
+    LogScroll.Position = UDim2.new(0, 8, 0, 22)
+    LogScroll.BackgroundTransparency = 1
+    LogScroll.BorderSizePixel = 0
+    LogScroll.ScrollBarThickness = 3
+    LogScroll.Parent = LogCard
+    
+    local LogText = Instance.new("TextLabel")
+    LogText.Size = UDim2.new(1, 0, 1, 0)
+    LogText.BackgroundTransparency = 1
+    LogText.Text = "Delta Mobile suite active..."
+    LogText.TextColor3 = C.TEXT
+    LogText.TextSize = 9
+    LogText.Font = Enum.Font.Gotham
+    LogText.TextXAlignment = Enum.TextXAlignment.Left
+    LogText.TextYAlignment = Enum.TextYAlignment.Top
+    LogText.TextWrapped = true
+    LogText.Parent = LogScroll
+    
+    task.spawn(function()
+        while ScreenGui.Parent do
+            if #State.Logs > 0 then
+                local display = ""
+                for i = 1, math.min(5, #State.Logs) do
+                    display = display .. State.Logs[i] .. "\n"
+                end
+                LogText.Text = display
+            end
+            task.wait(0.5)
+        end
+    end)
+end
+
+-- ============================================================
+--  WINDUI SAFE LOADER (DENGAN NATIVE DELTA FALLBACK)
+-- ============================================================
+local function tryLoadWindUI()
+    local windUrls = {
+        "https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua",
+        "https://tree-hub.vercel.app/api/UI/WindUI",
+    }
+    
+    for _, url in ipairs(windUrls) do
+        local ok, rawCode = pcall(function() return game:HttpGet(url) end)
+        if ok and rawCode and type(rawCode) == "string" and #rawCode > 500 then
+            local loadOk, lib = pcall(function() return loadstring(rawCode)() end)
+            if loadOk and lib and type(lib) == "table" and lib.CreateWindow then
+                return lib
+            end
+        end
+    end
+    return nil
+end
+
+local WindUI = tryLoadWindUI()
+
+if WindUI then
+    pcall(function()
+        local Window = WindUI:CreateWindow({
+            Title = "TAC - Throw a Coin",
+            Icon = "sparkles",
+            Author = "HUKI",
+            Folder = "TAC_Huki_Delta",
+            Size = UDim2.fromOffset(520, 360),
+            Transparent = true,
+            Theme = "Dark",
+            SideBarWidth = 160,
+            HasOutline = true,
+        })
+        
+        local MainTab = Window:Tab({ Title = "Gamepasses", Icon = "crown" })
+        MainTab:Section({ Title = "Gamepass Bypasses", TextXAlignment = "Left" })
+        
+        MainTab:Toggle({
+            Title = "Bypass Gamepass VIP",
+            Desc = "Buka pintu VIP & 0s Proximity Prompt",
+            Value = Config.VIPBypassEnabled,
+            Callback = function(state)
+                Config.VIPBypassEnabled = state
+                applyAllGamepassBypasses()
+            end
+        })
+        
+        MainTab:Toggle({
+            Title = "Bypass More Luck (2x)",
+            Desc = "Multiplier 2x Luck lemparan",
+            Value = Config.MoreLuckEnabled,
+            Callback = function(state)
+                Config.MoreLuckEnabled = state
+                applyAllGamepassBypasses()
+            end
+        })
+        
+        MainTab:Toggle({
+            Title = "Bypass Insane Luck (Ultra)",
+            Desc = "Multiplier Ultra Luck super tinggi",
+            Value = Config.InsaneLuckEnabled,
+            Callback = function(state)
+                Config.InsaneLuckEnabled = state
+                applyAllGamepassBypasses()
+            end
+        })
+        
+        local UtilTab = Window:Tab({ Title = "Utilities", Icon = "shield-check" })
+        UtilTab:Section({ Title = "Protection & Settings", TextXAlignment = "Left" })
+        
+        UtilTab:Toggle({
+            Title = "Anti-AFK Protection",
+            Desc = "Mencegah kick AFK 20 menit Delta Mobile",
+            Value = Config.AntiAFKEnabled,
+            Callback = function(state)
+                Config.AntiAFKEnabled = state
+            end
+        })
+        
+        UtilTab:Toggle({
+            Title = "NoClip VIP Doors",
+            Desc = "Menembus barrier/pintu kaca VIP",
+            Value = Config.UnlockVIPDoors,
+            Callback = function(state)
+                Config.UnlockVIPDoors = state
+                applyAllGamepassBypasses()
+            end
+        })
+        
+        UtilTab:Toggle({
+            Title = "Instant ProximityPrompts",
+            Desc = "0s durasi tekan tombol interact",
+            Value = Config.InstantPrompts,
+            Callback = function(state)
+                Config.InstantPrompts = state
+                applyAllGamepassBypasses()
+            end
+        })
+        
+        WindUI:Notify({
+            Title = "TAC WindUI Mobile",
+            Content = "Loaded on Delta Mobile!",
+            Duration = 3,
+            Icon = "sparkles",
+        })
+    end)
+else
+    buildNativeMobileUI()
+end
+
+applyAllGamepassBypasses()
+addLog("Delta Mobile Suite Active!")
+print("[TAC Suite] Loaded successfully on Delta Roblox Mobile!")
