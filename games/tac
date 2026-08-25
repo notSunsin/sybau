@@ -4,7 +4,7 @@
     Author: HUKI (100% Stable for Delta Mobile / Android & PC)
     ========================================================================
     Active Features:
-      1. 🛡️ Anti-AFK System (Delta Mobile 20m Kick Bypass)
+      1. 🛡️ Anti-AFK System (Multi-Layer Delta Mobile Kick Bypass)
       2. ⭐ Bypass Gamepass VIP (NoClip VIP Doors + 0s ProximityPrompts)
       3. 🍀 Bypass Gamepass More Luck (2x Luck Multiplier)
       4. 🔮 Bypass Gamepass Insane Luck (Ultra Luck Multiplier)
@@ -28,6 +28,7 @@ local CoreGui            = game:GetService("CoreGui")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui   = LocalPlayer:WaitForChild("PlayerGui", 10)
 
+-- Safe UI Parent for Delta Mobile
 local function getSafeParent()
     local success, target = pcall(function()
         if gethui then return gethui() end
@@ -67,38 +68,78 @@ local function addLog(msg)
 end
 
 -- ============================================================
---  FEATURE 1: ANTI-AFK (DELTA MOBILE)
+--  FEATURE 1: ROBUST MULTI-LAYER ANTI-AFK (DELTA MOBILE & PC)
 -- ============================================================
-pcall(function()
-    LocalPlayer.Idled:Connect(function()
-        if Config.AntiAFKEnabled then
-            pcall(function()
-                if VirtualUser then
-                    VirtualUser:CaptureController()
-                    VirtualUser:ClickButton2(Vector2.new(0, 0))
+local function disableIdledConnections()
+    pcall(function()
+        if getconnections then
+            for _, conn in ipairs(getconnections(LocalPlayer.Idled)) do
+                if conn.Disable then
+                    conn:Disable()
+                elseif conn.Disconnect then
+                    conn:Disconnect()
                 end
-            end)
-            addLog("🛡️ Anti-AFK: Prevented idle kick!")
-        end
-    end)
-    
-    task.spawn(function()
-        while true do
-            task.wait(240)
-            if Config.AntiAFKEnabled and VirtualUser then
-                pcall(function()
-                    VirtualUser:CaptureController()
-                    VirtualUser:ClickButton2(Vector2.new(0, 0))
-                end)
             end
         end
     end)
+end
+
+local function pulseAntiAFK()
+    if not Config.AntiAFKEnabled then return end
+    
+    -- Layer 1: getconnections bypass
+    disableIdledConnections()
+    
+    -- Layer 2: VirtualUser Simulation
+    pcall(function()
+        if VirtualUser then
+            VirtualUser:CaptureController()
+            VirtualUser:Button2Down(Vector2.new(0, 0))
+            task.wait(0.05)
+            VirtualUser:Button2Up(Vector2.new(0, 0))
+            VirtualUser:ClickButton2(Vector2.new(0, 0))
+        end
+    end)
+    
+    -- Layer 3: VirtualInputManager Simulation (Supported on Delta & Modern Executors)
+    pcall(function()
+        local VIM = game:GetService("VirtualInputManager")
+        if VIM then
+            VIM:SendMouseButtonEvent(0, 0, 0, true, game, 1)
+            task.wait(0.05)
+            VIM:SendMouseButtonEvent(0, 0, 0, false, game, 1)
+        end
+    end)
+end
+
+-- Connect to Idled Event
+pcall(function()
+    disableIdledConnections()
+    
+    LocalPlayer.Idled:Connect(function()
+        if Config.AntiAFKEnabled then
+            pulseAntiAFK()
+            addLog("🛡️ Anti-AFK: Prevented idle kick (Idled signal)!")
+        end
+    end)
+end)
+
+-- Heartbeat / Interval Pulse (Setiap 45 detik)
+task.spawn(function()
+    while true do
+        task.wait(45)
+        if Config.AntiAFKEnabled then
+            pulseAntiAFK()
+            disableIdledConnections()
+        end
+    end
 end)
 
 -- ============================================================
 --  FEATURE 2: GAMEPASS BYPASS ENGINE
 -- ============================================================
 local function applyGamepassBypasses()
+    -- 1. Metamethod Hook
     pcall(function()
         if not _G.TacHookApplied and hookmetamethod and getnamecallmethod then
             _G.TacHookApplied = true
@@ -114,6 +155,7 @@ local function applyGamepassBypasses()
         end
     end)
     
+    -- 2. Client Attributes & Values Spoofing
     pcall(function()
         if Config.VIPBypassEnabled then
             LocalPlayer:SetAttribute("VIP", true)
@@ -173,6 +215,7 @@ local function applyGamepassBypasses()
         end
     end)
     
+    -- 3. NoClip VIP Doors
     if Config.VIPBypassEnabled and Config.UnlockVIPDoors then
         pcall(function()
             for _, obj in ipairs(workspace:GetDescendants()) do
@@ -190,6 +233,7 @@ local function applyGamepassBypasses()
         end)
     end
     
+    -- 4. Instant ProximityPrompts
     if Config.InstantPrompts then
         pcall(function()
             for _, prompt in ipairs(workspace:GetDescendants()) do
@@ -520,6 +564,7 @@ end
 -- ============================================================
 mkToggleCard("🛡️ Anti-AFK Protection", "Mencegah kick AFK 20 menit di Delta Mobile", Config.AntiAFKEnabled, function(v)
     Config.AntiAFKEnabled = v
+    if v then pulseAntiAFK() end
     addLog("Anti-AFK: " .. (v and "ACTIVE" or "OFF"))
 end, 2, C.CYAN)
 
