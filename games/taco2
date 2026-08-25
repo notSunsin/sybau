@@ -1,0 +1,110 @@
+--[[
+    ========================================================================
+    TAC (Throw a Coin) - Delta Mobile Edition
+    Author: HUKI (100% Stable for Delta Mobile / Android & PC)
+    ========================================================================
+    Active Features:
+      1. 🛡️ Anti-AFK System (Multi-Layer Delta Mobile Kick Bypass)
+      2. 📜 Auto Claim Complete Quests (Daily, Weekly, Monthly, Badges)
+      3. ⭐ Bypass Gamepass VIP (NoClip VIP Doors + 0s ProximityPrompts)
+      4. 🍀 Bypass Gamepass More Luck (2x Luck Multiplier)
+      5. 🔮 Bypass Gamepass Insane Luck (Ultra Luck Multiplier)
+      6. ⚡ Universal Gamepass Spoofing (Client Attributes & Data)
+      7. 📱 Touch-Friendly UI with Floating Logo ⭐ (Open/Close)
+    ========================================================================
+]]
+
+-- ============================================================
+--  SERVICES & PLAYER
+-- ============================================================
+local Players            = game:GetService("Players")
+local ReplicatedStorage  = game:GetService("ReplicatedStorage")
+local RunService         = game:GetService("RunService")
+local TweenService       = game:GetService("TweenService")
+local UserInputService   = game:GetService("UserInputService")
+local MarketplaceService = game:GetService("MarketplaceService")
+local VirtualUser        = game:GetService("VirtualUser")
+local CoreGui            = game:GetService("CoreGui")
+
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui   = LocalPlayer:WaitForChild("PlayerGui", 10)
+
+-- Safe UI Parent for Delta Mobile
+local function getSafeParent()
+    local success, target = pcall(function()
+        if gethui then return gethui() end
+        if syn and syn.protect_gui then
+            local f = Instance.new("Folder")
+            syn.protect_gui(f)
+            f.Parent = CoreGui
+            return f
+        end
+        return CoreGui
+    end)
+    if success and target then return target end
+    return PlayerGui
+end
+
+-- ============================================================
+--  CONFIG & STATE
+-- ============================================================
+local Config = {
+    AntiAFKEnabled          = true,
+    AutoClaimQuestsEnabled  = true,
+    VIPBypassEnabled        = true,
+    MoreLuckEnabled         = true,
+    InsaneLuckEnabled       = true,
+    UnlockVIPDoors          = true,
+    InstantPrompts          = true,
+}
+
+local State = {
+    Logs = {},
+}
+
+local function addLog(msg)
+    local timestamp = os.date("%X")
+    local entry = string.format("[%s] %s", timestamp, msg)
+    table.insert(State.Logs, 1, entry)
+    if #State.Logs > 60 then table.remove(State.Logs) end
+end
+
+-- ============================================================
+--  FEATURE 1: ROBUST MULTI-LAYER ANTI-AFK (DELTA MOBILE & PC)
+-- ============================================================
+local function disableIdledConnections()
+    pcall(function()
+        if getconnections then
+            for _, conn in ipairs(getconnections(LocalPlayer.Idled)) do
+                if conn.Disable then
+                    conn:Disable()
+                elseif conn.Disconnect then
+                    conn:Disconnect()
+                end
+            end
+        end
+    end)
+end
+
+local function pulseAntiAFK()
+    if not Config.AntiAFKEnabled then return end
+    
+    -- Layer 1: getconnections bypass
+    disableIdledConnections()
+    
+    -- Layer 2: VirtualUser Simulation
+    pcall(function()
+        if VirtualUser then
+            VirtualUser:CaptureController()
+            VirtualUser:Button2Down(Vector2.new(0, 0))
+            task.wait(0.05)
+            VirtualUser:Button2Up(Vector2.new(0, 0))
+            VirtualUser:ClickButton2(Vector2.new(0, 0))
+        end
+    end)
+    
+    -- Layer 3: VirtualInputManager Simulation (Supported on Delta & Modern Executors)
+    pcall(function()
+        local VIM = game:GetService("VirtualInputManager")
+        if VIM then
+            VIM:SendMo
