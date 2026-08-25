@@ -5,12 +5,13 @@
     ========================================================================
     Active Features:
       1. 🛡️ Anti-AFK System (Multi-Layer Delta Mobile Kick Bypass)
-      2. 📜 Auto Claim Complete Quests (Daily, Weekly, Monthly, Badges)
-      3. ⭐ Bypass Gamepass VIP (NoClip VIP Doors + 0s ProximityPrompts)
-      4. 🍀 Bypass Gamepass More Luck (2x Luck Multiplier)
-      5. 🔮 Bypass Gamepass Insane Luck (Ultra Luck Multiplier)
-      6. ⚡ Universal Gamepass Spoofing (Client Attributes & Data)
-      7. 📱 Touch-Friendly UI with Floating Logo ⭐ (Open/Close)
+      2. 📜 Auto Claim Complete Quests & Badges (Daily, Weekly, Monthly)
+      3. 💎 Bypass Group & Like Claim (Claim Daily Luck / Fountain Rewards)
+      4. ⭐ Bypass Gamepass VIP (NoClip VIP Doors + 0s ProximityPrompts)
+      5. 🍀 Bypass Gamepass More Luck (2x Luck Multiplier)
+      6. 🔮 Bypass Gamepass Insane Luck (Ultra Luck Multiplier)
+      7. ⚡ Universal Gamepass Spoofing (Client Attributes & Data)
+      8. 📱 Touch-Friendly UI with Floating Logo ⭐ (Open/Close)
     ========================================================================
 ]]
 
@@ -23,6 +24,7 @@ local RunService         = game:GetService("RunService")
 local TweenService       = game:GetService("TweenService")
 local UserInputService   = game:GetService("UserInputService")
 local MarketplaceService = game:GetService("MarketplaceService")
+local GroupService       = game:GetService("GroupService")
 local VirtualUser        = game:GetService("VirtualUser")
 local CoreGui            = game:GetService("CoreGui")
 
@@ -71,6 +73,7 @@ end
 local Config = {
     AntiAFKEnabled          = true,
     AutoClaimQuestsEnabled  = true,
+    BypassGroupAndLike      = true,
     VIPBypassEnabled        = true,
     MoreLuckEnabled         = true,
     InsaneLuckEnabled       = true,
@@ -162,7 +165,7 @@ task.spawn(function()
 end)
 
 -- ============================================================
---  FEATURE 2: AUTO CLAIM COMPLETED QUESTS & BADGES
+--  FEATURE 2: AUTO CLAIM COMPLETED QUESTS & DAILY REWARDS
 -- ============================================================
 local function clickGuiButton(btn)
     if not btn then return end
@@ -194,11 +197,11 @@ local function scanAndClaimQuests()
         local pg = LocalPlayer:FindFirstChild("PlayerGui") or PlayerGui
         if not pg then return end
         
-        -- 1. Scan UI buttons for "Claim" (Abaikan tombol "Skip")
+        -- 1. Scan UI buttons for "Claim" (Quests, Daily Fountain Rewards, Group Rewards)
         for _, desc in ipairs(pg:GetDescendants()) do
             if desc:IsA("GuiButton") then
                 local isClaimBtn = false
-                local questDesc = "Quest"
+                local rewardDesc = "Reward"
                 
                 if desc:IsA("TextButton") and typeof(desc.Text) == "string" and desc.Text:lower():match("^claim") then
                     isClaimBtn = true
@@ -219,7 +222,7 @@ local function scanAndClaimQuests()
                 end
                 
                 if isClaimBtn then
-                    -- Ambil info judul quest
+                    -- Ambil nama/keterangan hadiah jika ada
                     local parentRow = desc.Parent
                     if parentRow then
                         for _, lbl in ipairs(parentRow:GetDescendants()) do
@@ -230,14 +233,14 @@ local function scanAndClaimQuests()
                                and not lbl.Text:lower():match("medium") 
                                and not lbl.Text:lower():match("hard") 
                                and not lbl.Text:find("%d+/%d+") then
-                                questDesc = lbl.Text
+                                rewardDesc = lbl.Text
                                 break
                             end
                         end
                     end
                     
                     clickGuiButton(desc)
-                    addLog("📜 Claimed: " .. string.sub(questDesc, 1, 20))
+                    addLog("🎁 Claimed: " .. string.sub(rewardDesc, 1, 20))
                     task.wait(0.15)
                 end
             end
@@ -269,7 +272,7 @@ local function scanAndClaimQuests()
         for _, remote in ipairs(ReplicatedStorage:GetDescendants()) do
             if remote:IsA("RemoteEvent") or remote:IsA("RemoteFunction") then
                 local rName = remote.Name:lower()
-                if (rName:find("claim") and rName:find("quest")) or rName == "claimquest" or rName == "claimdailyquest" then
+                if (rName:find("claim") and (rName:find("quest") or rName:find("daily") or rName:find("group") or rName:find("reward"))) then
                     pcall(function()
                         if remote:IsA("RemoteEvent") then
                             remote:FireServer()
@@ -336,10 +339,10 @@ task.spawn(function()
 end)
 
 -- ============================================================
---  FEATURE 3: GAMEPASS BYPASS ENGINE
+--  FEATURE 3: GAMEPASS & GROUP/LIKE BYPASS ENGINE
 -- ============================================================
-local function applyGamepassBypasses()
-    -- 1. Metamethod Hook
+local function applyBypasses()
+    -- 1. Metamethod Hook (Marketplace, Group & Like Checks)
     pcall(function()
         if not _G.TacHookApplied and typeof(hookmetamethod) == "function" and typeof(getnamecallmethod) == "function" then
             _G.TacHookApplied = true
@@ -347,9 +350,25 @@ local function applyGamepassBypasses()
             local oldHook
             oldHook = hookmetamethod(game, "__namecall", wrapClosure(function(self, ...)
                 local method = getnamecallmethod()
+                
+                -- Gamepass Ownership Bypass
                 if self == MarketplaceService and (method == "UserOwnsGamePassAsync" or method == "PlayerOwnsAsset") then
                     return true
                 end
+                
+                -- Group Membership & Role Bypass (Bypass "Like and Join Group to claim")
+                if Config.BypassGroupAndLike then
+                    if method == "IsInGroup" or method == "IsInGroupAsync" then
+                        return true
+                    end
+                    if method == "GetRankInGroup" then
+                        return 255
+                    end
+                    if method == "GetRoleInGroup" then
+                        return "Member"
+                    end
+                end
+                
                 if typeof(oldHook) == "function" then
                     return oldHook(self, ...)
                 end
@@ -358,21 +377,35 @@ local function applyGamepassBypasses()
         end
     end)
     
-    -- 2. Client Attributes & Values Spoofing
+    -- 2. Hook LocalPlayer method directly jika hookmetamethod terbatas
+    pcall(function()
+        if Config.BypassGroupAndLike and typeof(hookfunction) == "function" and LocalPlayer then
+            if typeof(LocalPlayer.IsInGroup) == "function" then
+                hookfunction(LocalPlayer.IsInGroup, function(...) return true end)
+            end
+        end
+    end)
+    
+    -- 3. Client Attributes & Values Spoofing
     pcall(function()
         if not LocalPlayer then return end
         
+        -- VIP Gamepass
         if Config.VIPBypassEnabled then
             LocalPlayer:SetAttribute("VIP", true)
             LocalPlayer:SetAttribute("HasVIP", true)
             LocalPlayer:SetAttribute("Gamepass_VIP", true)
         end
+        
+        -- More Luck Gamepass
         if Config.MoreLuckEnabled then
             LocalPlayer:SetAttribute("MoreLuck", true)
             LocalPlayer:SetAttribute("HasMoreLuck", true)
             LocalPlayer:SetAttribute("ExtraLuck", true)
             LocalPlayer:SetAttribute("Gamepass_MoreLuck", true)
         end
+        
+        -- Insane Luck Gamepass
         if Config.InsaneLuckEnabled then
             LocalPlayer:SetAttribute("InsaneLuck", true)
             LocalPlayer:SetAttribute("HasInsaneLuck", true)
@@ -380,6 +413,21 @@ local function applyGamepassBypasses()
             LocalPlayer:SetAttribute("Gamepass_InsaneLuck", true)
         end
         
+        -- Group & Like Claim Spoofing (Bypass syarat Like & Join Group)
+        if Config.BypassGroupAndLike then
+            LocalPlayer:SetAttribute("InGroup", true)
+            LocalPlayer:SetAttribute("Group", true)
+            LocalPlayer:SetAttribute("JoinedGroup", true)
+            LocalPlayer:SetAttribute("HasJoinedGroup", true)
+            LocalPlayer:SetAttribute("GroupMember", true)
+            LocalPlayer:SetAttribute("Liked", true)
+            LocalPlayer:SetAttribute("HasLiked", true)
+            LocalPlayer:SetAttribute("LikedGame", true)
+            LocalPlayer:SetAttribute("GroupReward", true)
+            LocalPlayer:SetAttribute("DailyStreak", true)
+        end
+        
+        -- Calculated Luck
         local calculatedLuck = 1
         if Config.MoreLuckEnabled then calculatedLuck = calculatedLuck * 2 end
         if Config.InsaneLuckEnabled then calculatedLuck = calculatedLuck * 5 end
@@ -410,6 +458,9 @@ local function applyGamepassBypasses()
                     if Config.InsaneLuckEnabled and (string.find(vName, "insaneluck") or string.find(vName, "ultraluck")) then
                         if v:IsA("BoolValue") then v.Value = true end
                     end
+                    if Config.BypassGroupAndLike and (string.find(vName, "group") or string.find(vName, "like")) then
+                        if v:IsA("BoolValue") then v.Value = true end
+                    end
                     if (Config.MoreLuckEnabled or Config.InsaneLuckEnabled) and (string.find(vName, "luck") or string.find(vName, "luckmultiplier")) then
                         if v:IsA("NumberValue") or v:IsA("IntValue") then
                             v.Value = calculatedLuck
@@ -420,7 +471,7 @@ local function applyGamepassBypasses()
         end
     end)
     
-    -- 3. NoClip VIP Doors
+    -- 4. NoClip VIP Doors
     if Config.VIPBypassEnabled and Config.UnlockVIPDoors then
         pcall(function()
             for _, obj in ipairs(workspace:GetDescendants()) do
@@ -438,7 +489,7 @@ local function applyGamepassBypasses()
         end)
     end
     
-    -- 4. Instant ProximityPrompts
+    -- 5. Instant ProximityPrompts
     if Config.InstantPrompts then
         pcall(function()
             for _, prompt in ipairs(workspace:GetDescendants()) do
@@ -456,7 +507,7 @@ end
 
 task.spawn(function()
     while true do
-        applyGamepassBypasses()
+        applyBypasses()
         task.wait(2.5)
     end
 end)
@@ -547,6 +598,7 @@ local C = {
     GREEN       = Color3.fromRGB(34, 197, 94),
     CYAN        = Color3.fromRGB(6, 182, 212),
     ORANGE      = Color3.fromRGB(251, 146, 60),
+    PINK        = Color3.fromRGB(244, 114, 182),
     TEXT        = Color3.fromRGB(241, 245, 249),
     TEXT_MUTED  = Color3.fromRGB(148, 163, 184),
     BORDER      = Color3.fromRGB(45, 49, 72),
@@ -679,7 +731,7 @@ Content.BackgroundTransparency = 1
 Content.BorderSizePixel = 0
 Content.ScrollBarThickness = 4
 Content.ScrollBarImageColor3 = Color3.fromRGB(70, 76, 110)
-Content.CanvasSize = UDim2.new(0, 0, 0, 540)
+Content.CanvasSize = UDim2.new(0, 0, 0, 590)
 Content.Parent = MainFrame
 
 local ContentLayout = Instance.new("UIListLayout")
@@ -785,23 +837,29 @@ mkToggleCard("📜 Auto Claim Complete Quests", "Otomatis klaim reward quest Dai
     addLog("Auto Claim Quests: " .. (v and "ACTIVE" or "OFF"))
 end, 3, C.ORANGE)
 
+mkToggleCard("💎 Bypass Group & Like Claim", "Bypass syarat Like & Join Group untuk klaim hadiah", Config.BypassGroupAndLike, function(v)
+    Config.BypassGroupAndLike = v
+    applyBypasses()
+    addLog("Group/Like Bypass: " .. (v and "ACTIVE" or "OFF"))
+end, 4, C.PINK)
+
 mkToggleCard("⭐ Bypass Gamepass VIP", "Buka pintu area VIP & hilangkan hold proximity", Config.VIPBypassEnabled, function(v)
     Config.VIPBypassEnabled = v
-    applyGamepassBypasses()
+    applyBypasses()
     addLog("VIP Gamepass: " .. (v and "ACTIVE" or "OFF"))
-end, 4, C.GOLD)
+end, 5, C.GOLD)
 
 mkToggleCard("🍀 Bypass More Luck (2x Luck)", "Meningkatkan multiplier keberuntungan lemparan", Config.MoreLuckEnabled, function(v)
     Config.MoreLuckEnabled = v
-    applyGamepassBypasses()
+    applyBypasses()
     addLog("More Luck: " .. (v and "ACTIVE (2x Luck)" or "OFF"))
-end, 5, C.GREEN)
+end, 6, C.GREEN)
 
 mkToggleCard("🔮 Bypass Insane Luck (Ultra Luck)", "Multiplier keberuntungan super tinggi", Config.InsaneLuckEnabled, function(v)
     Config.InsaneLuckEnabled = v
-    applyGamepassBypasses()
+    applyBypasses()
     addLog("Insane Luck: " .. (v and "ACTIVE (INSANE LUCK)" or "OFF"))
-end, 6, C.PURPLE)
+end, 7, C.PURPLE)
 
 -- ============================================================
 --  SECTION: ACTIVITY LOGS
@@ -809,7 +867,7 @@ end, 6, C.PURPLE)
 local LogCard = Instance.new("Frame")
 LogCard.Size = UDim2.new(1, 0, 0, 110)
 LogCard.BackgroundColor3 = C.CARD
-LogCard.LayoutOrder = 7
+LogCard.LayoutOrder = 8
 LogCard.Parent = Content
 mkCorner(LogCard, 8)
 mkStroke(LogCard, C.BORDER, 1)
@@ -858,6 +916,6 @@ task.spawn(function()
     end
 end)
 
-applyGamepassBypasses()
+applyBypasses()
 addLog("Delta Mobile Suite Active!")
 print("[TAC Suite] Loaded successfully on Delta Roblox Mobile!")
