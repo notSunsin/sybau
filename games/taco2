@@ -7,11 +7,12 @@
       1. 🛡️ Anti-AFK System (Multi-Layer Delta Mobile Kick Bypass)
       2. 📜 Auto Claim Complete Quests & Badges (Daily, Weekly, Monthly)
       3. 💎 Bypass Group & Like Claim (Claim Daily Luck / Fountain Rewards)
-      4. ⭐ Bypass Gamepass VIP (NoClip VIP Doors + 0s ProximityPrompts)
-      5. 🍀 Bypass Gamepass More Luck (2x Luck Multiplier)
-      6. 🔮 Bypass Gamepass Insane Luck (Ultra Luck Multiplier)
-      7. ⚡ Universal Gamepass Spoofing (Client Attributes & Data)
-      8. 📱 Touch-Friendly UI with Floating Logo ⭐ (Open/Close)
+      4. 🎁 Auto Redeem Promo Codes (FULLSTEAM, WORLD5, abracadabra, candy)
+      5. ⭐ Bypass Gamepass VIP (NoClip VIP Doors + 0s ProximityPrompts)
+      6. 🍀 Bypass Gamepass More Luck (2x Luck Multiplier)
+      7. 🔮 Bypass Gamepass Insane Luck (Ultra Luck Multiplier)
+      8. ⚡ Universal Gamepass Spoofing (Client Attributes & Data)
+      9. 📱 Touch-Friendly UI with Floating Logo ⭐ (Open/Close)
     ========================================================================
 ]]
 
@@ -68,7 +69,7 @@ local function getSafeParent()
 end
 
 -- ============================================================
---  CONFIG & STATE
+--  CONFIG, STATE & PROMO CODES
 -- ============================================================
 local Config = {
     AntiAFKEnabled          = true,
@@ -79,6 +80,13 @@ local Config = {
     InsaneLuckEnabled       = true,
     UnlockVIPDoors          = true,
     InstantPrompts          = true,
+}
+
+local PromoCodes = {
+    "FULLSTEAM",
+    "WORLD5",
+    "abracadabra",
+    "candy",
 }
 
 local State = {
@@ -339,7 +347,98 @@ task.spawn(function()
 end)
 
 -- ============================================================
---  FEATURE 3: GAMEPASS & GROUP/LIKE BYPASS ENGINE
+--  FEATURE 3: CODE REDEEM ENGINE (TAC)
+-- ============================================================
+local function redeemSingleCode(code)
+    if not code or code == "" then return end
+    
+    -- Method 1: ReplicatedStorage Remotes
+    pcall(function()
+        for _, remote in ipairs(ReplicatedStorage:GetDescendants()) do
+            if remote:IsA("RemoteEvent") or remote:IsA("RemoteFunction") then
+                local rName = remote.Name:lower()
+                if rName:find("code") or rName:find("redeem") or rName:find("promo") then
+                    pcall(function()
+                        if remote:IsA("RemoteEvent") then
+                            remote:FireServer(code)
+                            remote:FireServer("Redeem", code)
+                            remote:FireServer({ Code = code })
+                        elseif remote:IsA("RemoteFunction") then
+                            task.spawn(function()
+                                pcall(function() remote:InvokeServer(code) end)
+                            end)
+                        end
+                    end)
+                end
+            end
+        end
+    end)
+    
+    -- Method 2: GUI TextBox & Submit Button Injection
+    pcall(function()
+        local pg = LocalPlayer:FindFirstChild("PlayerGui") or PlayerGui
+        if not pg then return end
+        
+        for _, tb in ipairs(pg:GetDescendants()) do
+            if tb:IsA("TextBox") then
+                local tbName = tb.Name:lower()
+                local phText = typeof(tb.PlaceholderText) == "string" and tb.PlaceholderText:lower() or ""
+                
+                if tbName:find("code") or phText:find("code") or phText:find("enter") then
+                    tb.Text = code
+                    
+                    pcall(function()
+                        if firesignal and tb.FocusLost then
+                            firesignal(tb.FocusLost, true)
+                        end
+                    end)
+                    
+                    local parent = tb.Parent
+                    if parent then
+                        for _, btn in ipairs(parent:GetDescendants()) do
+                            if btn:IsA("GuiButton") and btn ~= tb then
+                                local bText = ""
+                                if btn:IsA("TextButton") and typeof(btn.Text) == "string" then
+                                    bText = btn.Text:lower()
+                                else
+                                    local l = btn:FindFirstChildWhichIsA("TextLabel")
+                                    if l and typeof(l.Text) == "string" then bText = l.Text:lower() end
+                                end
+                                
+                                if bText:find("redeem") or bText:find("enter") or bText:find("submit") or bText:find("claim") or bText:find("ok") or bText:find("check") or bText == ">" or bText == "✔" or bText == "" then
+                                    clickGuiButton(btn)
+                                    task.wait(0.15)
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end)
+    
+    addLog("🎁 Redeemed code: " .. code)
+end
+
+local function redeemAllPromoCodes()
+    task.spawn(function()
+        addLog("🚀 Redeeming TAC promo codes...")
+        for _, code in ipairs(PromoCodes) do
+            redeemSingleCode(code)
+            task.wait(0.5)
+        end
+        addLog("✅ All codes processed!")
+    end)
+end
+
+-- Auto-redeem pada saat pertama kali dimuat setelah player data ready
+task.spawn(function()
+    task.wait(3.5)
+    redeemAllPromoCodes()
+end)
+
+-- ============================================================
+--  FEATURE 4: GAMEPASS & GROUP/LIKE BYPASS ENGINE
 -- ============================================================
 local function applyBypasses()
     -- 1. Metamethod Hook (Marketplace, Group & Like Checks)
@@ -680,7 +779,7 @@ local HeaderTitle = Instance.new("TextLabel")
 HeaderTitle.Size = UDim2.new(1, -95, 1, 0)
 HeaderTitle.Position = UDim2.new(0, 12, 0, 0)
 HeaderTitle.BackgroundTransparency = 1
-HeaderTitle.Text = "⭐ TAC - Suite & Quests"
+HeaderTitle.Text = "⭐ TAC - Suite & Codes"
 HeaderTitle.TextColor3 = C.TEXT
 HeaderTitle.TextSize = 12
 HeaderTitle.Font = Enum.Font.GothamBold
@@ -731,7 +830,7 @@ Content.BackgroundTransparency = 1
 Content.BorderSizePixel = 0
 Content.ScrollBarThickness = 4
 Content.ScrollBarImageColor3 = Color3.fromRGB(70, 76, 110)
-Content.CanvasSize = UDim2.new(0, 0, 0, 590)
+Content.CanvasSize = UDim2.new(0, 0, 0, 660)
 Content.Parent = MainFrame
 
 local ContentLayout = Instance.new("UIListLayout")
@@ -758,6 +857,66 @@ StatusLbl.TextSize = 10
 StatusLbl.Font = Enum.Font.GothamBold
 StatusLbl.TextXAlignment = Enum.TextXAlignment.Left
 StatusLbl.Parent = StatusCard
+
+-- Action Button: Redeem Promo Codes Card
+local RedeemCard = Instance.new("TextButton")
+RedeemCard.Name = "RedeemCodesCard"
+RedeemCard.Size = UDim2.new(1, 0, 0, 52)
+RedeemCard.BackgroundColor3 = C.CARD
+RedeemCard.AutoButtonColor = false
+RedeemCard.Text = ""
+RedeemCard.LayoutOrder = 2
+RedeemCard.Parent = Content
+mkCorner(RedeemCard, 8)
+local redeemStroke = mkStroke(RedeemCard, C.GOLD, 1.2)
+
+local rIcon = Instance.new("TextLabel")
+rIcon.Size = UDim2.new(0, 32, 1, 0)
+rIcon.Position = UDim2.new(0, 8, 0, 0)
+rIcon.BackgroundTransparency = 1
+rIcon.Text = "🎁"
+rIcon.TextSize = 20
+rIcon.Parent = RedeemCard
+
+local rTitle = Instance.new("TextLabel")
+rTitle.Size = UDim2.new(1, -110, 0, 18)
+rTitle.Position = UDim2.new(0, 44, 0, 8)
+rTitle.BackgroundTransparency = 1
+rTitle.Text = "Redeem Active Codes (4 Codes)"
+rTitle.TextColor3 = C.GOLD
+rTitle.TextSize = 11
+rTitle.Font = Enum.Font.GothamBold
+rTitle.TextXAlignment = Enum.TextXAlignment.Left
+rTitle.Parent = RedeemCard
+
+local rDesc = Instance.new("TextLabel")
+rDesc.Size = UDim2.new(1, -110, 0, 16)
+rDesc.Position = UDim2.new(0, 44, 0, 26)
+rDesc.BackgroundTransparency = 1
+rDesc.Text = "FULLSTEAM, WORLD5, abracadabra, candy"
+rDesc.TextColor3 = C.TEXT_MUTED
+rDesc.TextSize = 8.5
+rDesc.Font = Enum.Font.Gotham
+rDesc.TextXAlignment = Enum.TextXAlignment.Left
+rDesc.Parent = RedeemCard
+
+local rActionBtn = Instance.new("TextLabel")
+rActionBtn.Size = UDim2.new(0, 60, 0, 26)
+rActionBtn.Position = UDim2.new(1, -68, 0.5, -13)
+rActionBtn.BackgroundColor3 = C.GOLD
+rActionBtn.Text = "REDEEM"
+rActionBtn.TextColor3 = Color3.fromRGB(15, 16, 24)
+rActionBtn.TextSize = 10
+rActionBtn.Font = Enum.Font.GothamBold
+rActionBtn.Parent = RedeemCard
+mkCorner(rActionBtn, 6)
+
+RedeemCard.Activated:Connect(function()
+    TweenService:Create(rActionBtn, TweenInfo.new(0.1), { BackgroundColor3 = C.GREEN }):Play()
+    redeemAllPromoCodes()
+    task.wait(0.3)
+    TweenService:Create(rActionBtn, TweenInfo.new(0.2), { BackgroundColor3 = C.GOLD }):Play()
+end)
 
 local function mkToggleCard(title, desc, initial, onToggle, order, accentColor)
     local card = Instance.new("TextButton")
@@ -829,37 +988,37 @@ mkToggleCard("🛡️ Anti-AFK Protection", "Mencegah kick AFK 20 menit di Delta
     Config.AntiAFKEnabled = v
     if v then pulseAntiAFK() end
     addLog("Anti-AFK: " .. (v and "ACTIVE" or "OFF"))
-end, 2, C.CYAN)
+end, 3, C.CYAN)
 
 mkToggleCard("📜 Auto Claim Complete Quests", "Otomatis klaim reward quest Daily, Weekly & Monthly", Config.AutoClaimQuestsEnabled, function(v)
     Config.AutoClaimQuestsEnabled = v
     if v then scanAndClaimQuests() end
     addLog("Auto Claim Quests: " .. (v and "ACTIVE" or "OFF"))
-end, 3, C.ORANGE)
+end, 4, C.ORANGE)
 
 mkToggleCard("💎 Bypass Group & Like Claim", "Bypass syarat Like & Join Group untuk klaim hadiah", Config.BypassGroupAndLike, function(v)
     Config.BypassGroupAndLike = v
     applyBypasses()
     addLog("Group/Like Bypass: " .. (v and "ACTIVE" or "OFF"))
-end, 4, C.PINK)
+end, 5, C.PINK)
 
 mkToggleCard("⭐ Bypass Gamepass VIP", "Buka pintu area VIP & hilangkan hold proximity", Config.VIPBypassEnabled, function(v)
     Config.VIPBypassEnabled = v
     applyBypasses()
     addLog("VIP Gamepass: " .. (v and "ACTIVE" or "OFF"))
-end, 5, C.GOLD)
+end, 6, C.GOLD)
 
 mkToggleCard("🍀 Bypass More Luck (2x Luck)", "Meningkatkan multiplier keberuntungan lemparan", Config.MoreLuckEnabled, function(v)
     Config.MoreLuckEnabled = v
     applyBypasses()
     addLog("More Luck: " .. (v and "ACTIVE (2x Luck)" or "OFF"))
-end, 6, C.GREEN)
+end, 7, C.GREEN)
 
 mkToggleCard("🔮 Bypass Insane Luck (Ultra Luck)", "Multiplier keberuntungan super tinggi", Config.InsaneLuckEnabled, function(v)
     Config.InsaneLuckEnabled = v
     applyBypasses()
     addLog("Insane Luck: " .. (v and "ACTIVE (INSANE LUCK)" or "OFF"))
-end, 7, C.PURPLE)
+end, 8, C.PURPLE)
 
 -- ============================================================
 --  SECTION: ACTIVITY LOGS
@@ -867,7 +1026,7 @@ end, 7, C.PURPLE)
 local LogCard = Instance.new("Frame")
 LogCard.Size = UDim2.new(1, 0, 0, 110)
 LogCard.BackgroundColor3 = C.CARD
-LogCard.LayoutOrder = 8
+LogCard.LayoutOrder = 9
 LogCard.Parent = Content
 mkCorner(LogCard, 8)
 mkStroke(LogCard, C.BORDER, 1)
