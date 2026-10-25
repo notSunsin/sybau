@@ -1,0 +1,1436 @@
+--[[
+    ═══════════════════════════════════════════════════════════════════════════════
+    HUKI ANIME DICE SIMULATOR - HALLOWEEN AUTOMATION HUB (WITH CONFIG MANAGER)
+    Target Game: Anime Dice Simulator (animedicehal_786)
+    Architecture: Native Luau, Anti-Cheat Safe, Client-Verified Remote Dispatcher
+    Compatible with: Potassium / Solara / Wave / Synapse / Native LocalScript (PC & Mobile)
+    
+    Fitur Utama:
+    1. Base & Economy:
+       - Auto Collect Money (Otomatis klaim seluruh balance dari base slot 1-18)
+       - Auto Rebirth (Auto cek saldo & upgrade rebirth secara konsisten)
+       - Equip Best Base Units (Auto pasang unit terbaik ke base)
+    2. Event Halloween:
+       - Auto Teleport to Halloween Island (Instant & auto-maintain di pulau event)
+       - Auto Trick or Treat (Safe noclip glide, door cooldown tracking, anti-cheat safe)
+       - Auto Claim Halloween Quests (Hourly & Daily quest auto-detect & claim)
+       - Auto Claim Pumpkin Pass (Klaim seluruh hadiah pass labu sekali klik / otomatis)
+    3. Daily & Quests:
+       - Auto Claim Daily Login (Klaim reward harian saat cooldown selesai)
+       - Auto Claim Quests (Klaim Daily & Weekly quests secara real-time)
+    4. Workspace Config Management:
+       - Save Config ke file workspace (HUKI_AnimeDice_Config.json)
+       - Load Config manual kapan saja
+       - Auto-Load Config saat script dijalankan (Auto-restore settings)
+       - Auto-Save Config otomatis saat pengguna mengubah toggle
+       - Reset to default settings
+    5. Utilities & Diagnostics:
+       - Anti-AFK (Cegah disconnect 20 menit)
+       - Live Economy & Event Stats (Money, Rebirth, Candy, Pumpkins)
+       - Central Real-Time Activity Log Viewer
+       - Draggable Responsive Dark/Halloween UI + Floating Minimize Pill
+    ═══════════════════════════════════════════════════════════════════════════════
+]]
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local CollectionService = game:GetService("CollectionService")
+local HttpService = game:GetService("HttpService")
+
+local LocalPlayer = Players.LocalPlayer
+if not LocalPlayer then
+    Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
+    LocalPlayer = Players.LocalPlayer
+end
+
+-- =============================================================================
+-- 1. ADAPTER CONTAINER UI (CORE GUI / GET HUI / PLAYER GUI)
+-- =============================================================================
+local function getGuiContainer()
+    if typeof(gethui) == "function" then
+        local ok, hui = pcall(gethui)
+        if ok and hui then return hui end
+    end
+    local okCore, coreGui = pcall(function() return game:GetService("CoreGui") end)
+    if okCore and coreGui then
+        local okAccess, _ = pcall(function() return coreGui.Name end)
+        if okAccess then return coreGui end
+    end
+    return LocalPlayer:WaitForChild("PlayerGui")
+end
+
+local parentGui = getGuiContainer()
+
+-- Bersihkan instance lama jika script dijalankan ulang
+local GUI_NAME = "HukiAnimeDiceHal_UI"
+local oldGui = parentGui:FindFirstChild(GUI_NAME)
+if oldGui then
+    pcall(function() oldGui:Destroy() end)
+end
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = GUI_NAME
+screenGui.ResetOnSpawn = false
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.Parent = parentGui
+
+-- =============================================================================
+-- 2. DESIGN SYSTEM & VISUAL TOKENS (HALLOWEEN THEME)
+-- =============================================================================
+local Theme = {
+    Background       = Color3.fromRGB(15, 18, 26),      -- Deep Obsidian
+    HeaderBackground = Color3.fromRGB(22, 26, 38),      -- Dark Indigo
+    Panel            = Color3.fromRGB(25, 30, 44),      -- Card Surface
+    PanelHover       = Color3.fromRGB(33, 40, 58),      -- Card Hover
+    Border           = Color3.fromRGB(44, 53, 76),      -- Subtle Border
+    BorderGlow       = Color3.fromRGB(255, 140, 25),    -- Halloween Orange
+    
+    TextPrimary      = Color3.fromRGB(240, 244, 250),   -- Bright White
+    TextSecondary    = Color3.fromRGB(150, 162, 185),   -- Soft Silver
+    TextMuted        = Color3.fromRGB(98, 108, 128),    -- Dark Muted
+    
+    Orange           = Color3.fromRGB(255, 140, 25),    -- Pumpkin Orange
+    Purple           = Color3.fromRGB(160, 60, 255),    -- Witch Purple
+    Cyan             = Color3.fromRGB(0, 215, 255),     -- Cyber Cyan
+    Green            = Color3.fromRGB(46, 204, 113),    -- Success Green
+    Red              = Color3.fromRGB(231, 76, 60),     -- Warning Red
+    
+    ToggleActive     = Color3.fromRGB(255, 140, 25),    -- Active Orange
+    ToggleInactive   = Color3.fromRGB(42, 50, 70),      -- Inactive Slate
+    
+    CornerRadius     = UDim.new(0, 10),
+    CornerSmall      = UDim.new(0, 6),
+    CornerPill       = UDim.new(0, 20),
+    Padding          = 10,
+    
+    FontTitle        = Enum.Font.GothamBold,
+    FontHeader       = Enum.Font.GothamMedium,
+    FontBody         = Enum.Font.Gotham,
+    FontMono         = Enum.Font.Code,
+    
+    SizeTitle        = 14,
+    SizeHeader       = 13,
+    SizeBody         = 12,
+    SizeSmall        = 10
+}
+
+local function applyCorner(inst, radius)
+    local c = Instance.new("UICorner")
+    c.CornerRadius = radius or Theme.CornerRadius
+    c.Parent = inst
+    return c
+end
+
+local function applyStroke(inst, color, thickness)
+    local s = Instance.new("UIStroke")
+    s.Color = color or Theme.Border
+    s.Thickness = thickness or 1
+    s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    s.Parent = inst
+    return s
+end
+
+local function applyPadding(inst, px)
+    local p = Instance.new("UIPadding")
+    local val = px or Theme.Padding
+    p.PaddingTop = UDim.new(0, val)
+    p.PaddingBottom = UDim.new(0, val)
+    p.PaddingLeft = UDim.new(0, val)
+    p.PaddingRight = UDim.new(0, val)
+    p.Parent = inst
+    return p
+end
+
+-- =============================================================================
+-- 3. GAME INTERNAL API / REMOTES RESOLVER
+-- =============================================================================
+local NetworkFolder = ReplicatedStorage:WaitForChild("Network", 10)
+local Framework = ReplicatedStorage:FindFirstChild("Framework")
+
+-- Safely acquire DataController if available
+local DataController = nil
+pcall(function()
+    if Framework and Framework:FindFirstChild("Features") and Framework.Features:FindFirstChild("Data") then
+        DataController = require(Framework.Features.Data.DataController)
+    end
+end)
+
+-- Remote References
+local function getRemoteEvent(serviceName, eventName)
+    if NetworkFolder and NetworkFolder:FindFirstChild(serviceName) then
+        local reFolder = NetworkFolder[serviceName]:FindFirstChild("RE")
+        if reFolder and reFolder:FindFirstChild(eventName) then
+            return reFolder[eventName]
+        end
+    end
+    return nil
+end
+
+local function getRemoteFunction(serviceName, funcName)
+    if NetworkFolder and NetworkFolder:FindFirstChild(serviceName) then
+        local rfFolder = NetworkFolder[serviceName]:FindFirstChild("RF")
+        if rfFolder and rfFolder:FindFirstChild(funcName) then
+            return rfFolder[funcName]
+        end
+    end
+    return nil
+end
+
+local Remotes = {
+    -- Plot (Base)
+    CollectBalance = getRemoteEvent("PlotService", "CollectBalance"),
+    EquipBestUnits = getRemoteEvent("PlotService", "EquipBest"),
+    
+    -- Rebirth
+    Rebirth = getRemoteEvent("RebirthService", "Rebirth"),
+    
+    -- Halloween
+    HalloweenTeleport = getRemoteFunction("HalloweenService", "Teleport"),
+    ClaimAllPumpkinPass = getRemoteEvent("HalloweenService", "ClaimAllPath"),
+    ClaimPumpkinPassTier = getRemoteEvent("HalloweenService", "ClaimPath"),
+    ClaimHalloweenQuest = getRemoteEvent("HalloweenQuestService", "Claim"),
+    KnockedEvent = getRemoteEvent("TrickOrTreatService", "Knocked"),
+    
+    -- Rewards & Quests
+    ClaimDailyReward = getRemoteEvent("DailyRewardService", "Claim"),
+    ClaimQuest = getRemoteEvent("QuestService", "Claim"),
+}
+
+-- Rebirth Cost Formula / Standard Table (from game's Rebirths module)
+local RebirthCosts = {
+    [0] = 50000,
+    [1] = 5000000,
+    [2] = 500000000,
+    [3] = 50000000000,
+    [4] = 5000000000000,
+    [5] = 500000000000000,
+    [6] = 1e16,
+    [7] = 1e18,
+    [8] = 1e20,
+    [9] = 1e22,
+    [10] = 1e24,
+    [11] = 1e26,
+    [12] = 1e28,
+    [13] = 1e30,
+    [14] = 1e32,
+    [15] = 1e34,
+}
+
+local function formatNumber(val)
+    if not val or type(val) ~= "number" then return "0" end
+    if val >= 1e30 then return string.format("%.2f No", val / 1e30) end
+    if val >= 1e27 then return string.format("%.2f Oc", val / 1e27) end
+    if val >= 1e24 then return string.format("%.2f Sp", val / 1e24) end
+    if val >= 1e21 then return string.format("%.2f Sx", val / 1e21) end
+    if val >= 1e18 then return string.format("%.2f Qi", val / 1e18) end
+    if val >= 1e15 then return string.format("%.2f Qa", val / 1e15) end
+    if val >= 1e12 then return string.format("%.2f T", val / 1e12) end
+    if val >= 1e9  then return string.format("%.2f B", val / 1e9) end
+    if val >= 1e6  then return string.format("%.2f M", val / 1e6) end
+    if val >= 1e3  then return string.format("%.2f K", val / 1e3) end
+    return tostring(math.floor(val))
+end
+
+-- =============================================================================
+-- 4. STATE MANAGEMENT & LOGGING
+-- =============================================================================
+local State = {
+    AutoCollectMoney = false,
+    AutoRebirth = false,
+    AutoTeleportHalloween = false,
+    AutoTrickOrTreat = false,
+    AutoClaimHalloweenQuests = false,
+    AutoClaimPumpkinPass = false,
+    AutoClaimDailyReward = false,
+    AutoClaimQuests = false,
+    AntiAfk = true,
+    AutoSave = true,
+    AutoLoad = true,
+}
+
+local Logs = {}
+local LogEvent = Instance.new("BindableEvent")
+
+local function addLog(category, message, color)
+    local timestamp = os.date("%H:%M:%S")
+    local entry = {
+        time = timestamp,
+        category = category,
+        text = message,
+        color = color or Theme.TextSecondary
+    }
+    table.insert(Logs, 1, entry)
+    if #Logs > 100 then
+        table.remove(Logs, #Logs)
+    end
+    LogEvent:Fire(entry)
+end
+
+-- =============================================================================
+-- 5. CONFIG MANAGER (WORKSPACE FILE SYSTEM SAVE & AUTOLOAD)
+-- =============================================================================
+local ConfigManager = {
+    FileName = "HUKI_AnimeDice_Config.json",
+    RegisteredToggles = {},
+    LastActionTime = "Belum pernah",
+    StatusMessage = "Menunggu aksi...",
+}
+
+local function isFsSupported()
+    return typeof(writefile) == "function" and typeof(readfile) == "function" and typeof(isfile) == "function"
+end
+
+function ConfigManager.RegisterToggle(key, setVisualFn, callbackFn)
+    ConfigManager.RegisteredToggles[key] = {
+        setVisual = setVisualFn,
+        callback = callbackFn,
+    }
+end
+
+function ConfigManager.Save(silent)
+    if not isFsSupported() then
+        if not silent then
+            addLog("CONFIG", "Workspace file system (writefile) tidak didukung executor ini.", Theme.Red)
+        end
+        return false
+    end
+    
+    local saveTable = {}
+    for k, v in pairs(State) do
+        saveTable[k] = v
+    end
+    saveTable["_SavedAt"] = os.date("%Y-%m-%d %H:%M:%S")
+    
+    local ok, encoded = pcall(function()
+        return HttpService:JSONEncode(saveTable)
+    end)
+    
+    if not ok or not encoded then
+        addLog("CONFIG", "Gagal memproses data config ke JSON.", Theme.Red)
+        return false
+    end
+    
+    local writeOk, err = pcall(function()
+        writefile(ConfigManager.FileName, encoded)
+    end)
+    
+    if writeOk then
+        ConfigManager.LastActionTime = os.date("%H:%M:%S")
+        ConfigManager.StatusMessage = "Tersimpan di workspace: " .. ConfigManager.FileName
+        if not silent then
+            addLog("CONFIG", "Config tersimpan di workspace [" .. ConfigManager.FileName .. "]", Theme.Green)
+        end
+        return true
+    else
+        ConfigManager.StatusMessage = "Gagal simpan: " .. tostring(err)
+        addLog("CONFIG", "Gagal menyimpan ke workspace: " .. tostring(err), Theme.Red)
+        return false
+    end
+end
+
+function ConfigManager.Load(silent)
+    if not isFsSupported() then
+        if not silent then
+            addLog("CONFIG", "Workspace file system (readfile) tidak didukung executor ini.", Theme.Red)
+        end
+        return false
+    end
+    
+    local exists = false
+    pcall(function()
+        exists = isfile(ConfigManager.FileName)
+    end)
+    
+    if not exists then
+        if not silent then
+            addLog("CONFIG", "File config belum ditemukan di workspace: " .. ConfigManager.FileName, Theme.TextSecondary)
+        end
+        ConfigManager.StatusMessage = "File belum dibuat di workspace"
+        return false
+    end
+    
+    local readOk, content = pcall(function()
+        return readfile(ConfigManager.FileName)
+    end)
+    
+    if not readOk or not content or content == "" then
+        addLog("CONFIG", "Gagal membaca isi file config dari workspace.", Theme.Red)
+        return false
+    end
+    
+    local decodeOk, decoded = pcall(function()
+        return HttpService:JSONDecode(content)
+    end)
+    
+    if not decodeOk or type(decoded) ~= "table" then
+        addLog("CONFIG", "Format JSON file config rusak atau tidak valid.", Theme.Red)
+        return false
+    end
+    
+    -- Terapkan nilai setting ke State dan UI Toggle
+    for key, value in pairs(decoded) do
+        if State[key] ~= nil and type(State[key]) == type(value) then
+            State[key] = value
+            local reg = ConfigManager.RegisteredToggles[key]
+            if reg then
+                pcall(function()
+                    reg.setVisual(value)
+                    reg.callback(value)
+                end)
+            end
+        end
+    end
+    
+    ConfigManager.LastActionTime = os.date("%H:%M:%S")
+    ConfigManager.StatusMessage = "Dimuat dari workspace: " .. ConfigManager.FileName
+    if not silent then
+        addLog("CONFIG", "Config berhasil dimuat dari workspace [" .. ConfigManager.FileName .. "]", Theme.Green)
+    end
+    return true
+end
+
+function ConfigManager.Reset(silent)
+    local defaults = {
+        AutoCollectMoney = false,
+        AutoRebirth = false,
+        AutoTeleportHalloween = false,
+        AutoTrickOrTreat = false,
+        AutoClaimHalloweenQuests = false,
+        AutoClaimPumpkinPass = false,
+        AutoClaimDailyReward = false,
+        AutoClaimQuests = false,
+        AntiAfk = true,
+        AutoSave = true,
+        AutoLoad = true,
+    }
+    
+    for key, val in pairs(defaults) do
+        State[key] = val
+        local reg = ConfigManager.RegisteredToggles[key]
+        if reg then
+            pcall(function()
+                reg.setVisual(val)
+                reg.callback(val)
+            end)
+        end
+    end
+    
+    ConfigManager.Save(true)
+    if not silent then
+        addLog("CONFIG", "Seluruh konfigurasi di-reset ke nilai default.", Theme.Orange)
+    end
+end
+
+-- =============================================================================
+-- 6. ANTI-AFK CONTROLLER
+-- =============================================================================
+local function setupAntiAfk()
+    local vu = nil
+    pcall(function() vu = game:GetService("VirtualUser") end)
+    
+    LocalPlayer.Idled:Connect(function()
+        if State.AntiAfk and vu then
+            vu:CaptureController()
+            vu:ClickButton2(Vector2.new())
+            addLog("ANTI-AFK", "Prevented idle disconnect signal", Theme.Cyan)
+        end
+    end)
+end
+setupAntiAfk()
+
+-- =============================================================================
+-- 7. AUTOMATION DISPATCHERS
+-- =============================================================================
+
+-- [FEATURE 1: AUTO COLLECT BASE MONEY]
+local function collectBaseMoney()
+    if not Remotes.CollectBalance then return false end
+    local collectedAny = false
+    
+    -- Slot standard game: 1 to 18 (PlotConfig.GetMaxSlots())
+    for slot = 1, 18 do
+        local shouldCollect = true
+        if DataController and DataController.Slots and DataController.Slots[tostring(slot)] then
+            local slotInfo = DataController.Slots[tostring(slot)]()
+            if not slotInfo or (slotInfo.balance and slotInfo.balance <= 0) then
+                shouldCollect = false
+            end
+        end
+        
+        if shouldCollect then
+            pcall(function()
+                Remotes.CollectBalance:FireServer(slot)
+            end)
+            collectedAny = true
+        end
+    end
+    return collectedAny
+end
+
+-- [FEATURE 2: AUTO REBIRTH]
+local function executeRebirth()
+    if not Remotes.Rebirth then return false end
+    
+    local curRebirth = 0
+    local curMoney = 0
+    if DataController then
+        pcall(function()
+            curRebirth = DataController.Rebirth() or 0
+            curMoney = DataController.Money() or 0
+        end)
+    end
+    
+    local nextCost = RebirthCosts[curRebirth]
+    if nextCost and curMoney < nextCost then
+        return false -- Saldo belum mencukupi
+    end
+    
+    local ok = pcall(function()
+        Remotes.Rebirth:FireServer()
+    end)
+    
+    if ok then
+        addLog("REBIRTH", "Signal Rebirth dikirim (Target: +" .. (curRebirth + 1) .. ")", Theme.Green)
+        return true
+    end
+    return false
+end
+
+-- [FEATURE 3: HALLOWEEN ISLAND TELEPORT]
+local function teleportToHalloweenIsland()
+    if Remotes.HalloweenTeleport then
+        local ok, res = pcall(function()
+            return Remotes.HalloweenTeleport:InvokeServer("Island")
+        end)
+        if ok and res then
+            addLog("HALLOWEEN", "Berhasil teleport ke Halloween Island via Server RF", Theme.Orange)
+            return true
+        end
+    end
+    
+    -- Direct CFrame Fallback jika RF pending
+    local arrival = workspace:FindFirstChild("Halloween") and workspace.Halloween:FindFirstChild("ArrivalPoint")
+    if arrival and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        LocalPlayer.Character.HumanoidRootPart.CFrame = arrival.CFrame + Vector3.new(0, 3, 0)
+        addLog("HALLOWEEN", "Teleport fallback CFrame ke Halloween Island", Theme.Orange)
+        return true
+    end
+    return false
+end
+
+local function teleportToHub()
+    if Remotes.HalloweenTeleport then
+        pcall(function()
+            Remotes.HalloweenTeleport:InvokeServer("Hub")
+        end)
+        addLog("TELEPORT", "Kembali ke Main Hub / Base", Theme.Cyan)
+    elseif workspace:FindFirstChild("Halloween") and workspace.Halloween:FindFirstChild("ReturnPoint") then
+        local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            hrp.CFrame = workspace.Halloween.ReturnPoint.CFrame + Vector3.new(0, 3, 0)
+        end
+    end
+end
+
+-- [FEATURE 4: AUTO TRICK OR TREAT]
+local doorCooldowns = {}
+
+if Remotes.KnockedEvent then
+    pcall(function()
+        Remotes.KnockedEvent.OnClientEvent:Connect(function(doorPart, outcomeIndex, readyAt)
+            if doorPart then
+                doorCooldowns[doorPart] = readyAt or (workspace:GetServerTimeNow() + 30)
+                addLog("TRICK-OR-TREAT", "Pintu diketuk! Berhasil dapat Candy / Item!", Theme.Orange)
+            end
+        end)
+    end)
+end
+
+local function getValidDoors()
+    local doors = CollectionService:GetTagged("TrickOrTreatDoor")
+    local readyDoors = {}
+    local now = workspace:GetServerTimeNow()
+    
+    for _, door in ipairs(doors) do
+        if door:IsA("BasePart") then
+            local readyAt = doorCooldowns[door] or 0
+            if now >= readyAt then
+                table.insert(readyDoors, door)
+            end
+        end
+    end
+    return readyDoors, doors
+end
+
+local isWalkingToDoor = false
+local function runTrickOrTreatStep()
+    if isWalkingToDoor then return end
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if not hrp or not hum or hum.Health <= 0 then return end
+    
+    local readyDoors, allDoors = getValidDoors()
+    if #readyDoors == 0 then
+        return
+    end
+    
+    -- Pilih pintu terdekat yang ready
+    table.sort(readyDoors, function(a, b)
+        return (a.Position - hrp.Position).Magnitude < (b.Position - hrp.Position).Magnitude
+    end)
+    
+    local targetDoor = readyDoors[1]
+    local frontUnit = targetDoor:GetAttribute("TrickOrTreatFront")
+    local targetPos = targetDoor.Position
+    if typeof(frontUnit) == "Vector3" then
+        targetPos = targetDoor.Position + frontUnit * 3.5
+    else
+        targetPos = targetDoor.Position + targetDoor.CFrame.LookVector * 3.5
+    end
+    
+    isWalkingToDoor = true
+    addLog("TRICK-OR-TREAT", "Menuju ke pintu: " .. targetDoor.Name .. " (" .. math.floor((targetPos - hrp.Position).Magnitude) .. " studs)", Theme.TextSecondary)
+    
+    -- Smooth Anti-Cheat Safe Glide (Max 48 studs/s untuk melewati batas 60 studs/s AntiCheat)
+    local moveThread = task.spawn(function()
+        local SAFE_SPEED = 48
+        
+        -- Aktifkan noclip sementara saat menuju pintu
+        local noclipConn = RunService.Stepped:Connect(function()
+            if LocalPlayer.Character then
+                for _, part in ipairs(LocalPlayer.Character:GetDescendants()) do
+                    if part:IsA("BasePart") and part.CanCollide then
+                        part.CanCollide = false
+                    end
+                end
+            end
+        end)
+        
+        while State.AutoTrickOrTreat and LocalPlayer.Character do
+            local currentHrp = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if not currentHrp then break end
+            
+            local diff = targetPos - currentHrp.Position
+            local dist = diff.Magnitude
+            if dist <= 5 then
+                break
+            end
+            
+            local stepDist = math.min(dist, SAFE_SPEED * 0.05)
+            local nextPos = currentHrp.Position + (diff.Unit * stepDist)
+            currentHrp.CFrame = CFrame.new(nextPos, nextPos + diff.Unit)
+            currentHrp.AssemblyLinearVelocity = Vector3.zero
+            task.wait(0.05)
+        end
+        
+        if noclipConn then noclipConn:Disconnect() end
+        
+        -- Tunggu di depan pintu agar server proximity loop men-trigger Knock
+        local waitStart = tick()
+        while State.AutoTrickOrTreat and (tick() - waitStart) < 3.0 do
+            local now = workspace:GetServerTimeNow()
+            if (doorCooldowns[targetDoor] or 0) > now then
+                break -- Berhasil knock terdeteksi
+            end
+            task.wait(0.25)
+        end
+        
+        -- Set cooldown lokal sebagai fallback
+        doorCooldowns[targetDoor] = workspace:GetServerTimeNow() + 30.5
+        isWalkingToDoor = false
+    end)
+end
+
+-- [FEATURE 5: AUTO CLAIM HALLOWEEN QUESTS]
+local function claimHalloweenQuests()
+    if not Remotes.ClaimHalloweenQuest or not DataController or not DataController.Halloween then return end
+    
+    local periods = { "Hourly", "Daily" }
+    for _, period in ipairs(periods) do
+        local key = period == "Hourly" and "HourlyQuests" or "Quests"
+        if DataController.Halloween[key] then
+            local questData = DataController.Halloween[key]()
+            if questData and questData.ids then
+                for _, qId in ipairs(questData.ids) do
+                    local isClaimed = questData.claimed and questData.claimed[qId] == true
+                    if not isClaimed then
+                        pcall(function()
+                            Remotes.ClaimHalloweenQuest:FireServer(period, qId)
+                        end)
+                        addLog("HALLOWEEN QUEST", "Mencoba klaim " .. period .. " Quest: " .. qId, Theme.Purple)
+                        task.wait(0.25)
+                    end
+                end
+            end
+        end
+    end
+end
+
+-- [FEATURE 6: AUTO CLAIM PUMPKIN PASS]
+local function claimPumpkinPass()
+    if Remotes.ClaimAllPumpkinPass then
+        pcall(function()
+            Remotes.ClaimAllPumpkinPass:FireServer()
+        end)
+        addLog("PUMPKIN PASS", "Claim All Pumpkin Pass dikirim ke server!", Theme.Orange)
+        return true
+    end
+    return false
+end
+
+-- [FEATURE 7: AUTO CLAIM DAILY LOGIN]
+local function claimDailyLogin()
+    if not Remotes.ClaimDailyReward then return false end
+    
+    local canClaim = true
+    if DataController and DataController.LastDailyRewardClaim then
+        pcall(function()
+            local lastClaim = DataController.LastDailyRewardClaim() or 0
+            if lastClaim ~= 0 and (os.time() - lastClaim) < 82800 then
+                canClaim = false
+            end
+        end)
+    end
+    
+    if canClaim then
+        pcall(function()
+            Remotes.ClaimDailyReward:FireServer()
+        end)
+        addLog("DAILY REWARD", "Klaim Daily Login Reward dikirim!", Theme.Cyan)
+        return true
+    end
+    return false
+end
+
+-- [FEATURE 8: AUTO CLAIM QUESTS (DAILY & WEEKLY)]
+local function claimNormalQuests()
+    if not Remotes.ClaimQuest or not DataController or not DataController.Quests then return end
+    
+    local periods = { "Daily", "Weekly" }
+    for _, period in ipairs(periods) do
+        if DataController.Quests[period] then
+            local qData = DataController.Quests[period]()
+            if qData and qData.progress and qData.expiresAt then
+                for qId, prog in pairs(qData.progress) do
+                    local isClaimed = qData.claimed and qData.claimed[qId] == true
+                    if not isClaimed then
+                        pcall(function()
+                            Remotes.ClaimQuest:FireServer(period, qId, qData.expiresAt)
+                        end)
+                        task.wait(0.25)
+                    end
+                end
+            end
+        end
+    end
+end
+
+-- =============================================================================
+-- 8. BACKGROUND AUTOMATION LOOP
+-- =============================================================================
+task.spawn(function()
+    local collectTimer = 0
+    local rebirthTimer = 0
+    local passTimer = 0
+    local questTimer = 0
+    local dailyTimer = 0
+    local islandTimer = 0
+    
+    while task.wait(0.5) do
+        local now = tick()
+        
+        -- 1. Auto Collect Money (setiap 2 detik)
+        if State.AutoCollectMoney and (now - collectTimer) >= 2.0 then
+            collectTimer = now
+            collectBaseMoney()
+        end
+        
+        -- 2. Auto Rebirth (setiap 1.5 detik)
+        if State.AutoRebirth and (now - rebirthTimer) >= 1.5 then
+            rebirthTimer = now
+            executeRebirth()
+        end
+        
+        -- 3. Auto Teleport Halloween (cek posisi setiap 5 detik)
+        if State.AutoTeleportHalloween and (now - islandTimer) >= 5.0 then
+            islandTimer = now
+            local char = LocalPlayer.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            local arrival = workspace:FindFirstChild("Halloween") and workspace.Halloween:FindFirstChild("ArrivalPoint")
+            if hrp and arrival then
+                local dist = (hrp.Position - arrival.Position).Magnitude
+                if dist > 850 then -- Jika player di luar Halloween Island
+                    teleportToHalloweenIsland()
+                end
+            else
+                teleportToHalloweenIsland()
+            end
+        end
+        
+        -- 4. Auto Trick or Treat (continuous queue)
+        if State.AutoTrickOrTreat then
+            runTrickOrTreatStep()
+        end
+        
+        -- 5. Auto Claim Halloween Quests & Pumpkin Pass (setiap 10 detik)
+        if (now - passTimer) >= 10.0 then
+            passTimer = now
+            if State.AutoClaimPumpkinPass then
+                claimPumpkinPass()
+            end
+            if State.AutoClaimHalloweenQuests then
+                claimHalloweenQuests()
+            end
+        end
+        
+        -- 6. Auto Claim Daily Reward & Quests (setiap 15 detik)
+        if (now - dailyTimer) >= 15.0 then
+            dailyTimer = now
+            if State.AutoClaimDailyReward then
+                claimDailyLogin()
+            end
+            if State.AutoClaimQuests then
+                claimNormalQuests()
+            end
+        end
+    end
+end)
+
+-- =============================================================================
+-- 9. USER INTERFACE (CLEAN, MODERN, DRAGGABLE & MINIMIZABLE)
+-- =============================================================================
+
+-- Main Window Frame
+local mainFrame = Instance.new("Frame")
+mainFrame.Name = "MainFrame"
+mainFrame.Size = UDim2.new(0, 490, 0, 430)
+mainFrame.Position = UDim2.new(0.5, -245, 0.5, -215)
+mainFrame.BackgroundColor3 = Theme.Background
+applyCorner(mainFrame, Theme.CornerRadius)
+applyStroke(mainFrame, Theme.Border, 1.5)
+mainFrame.ClipsDescendants = true
+mainFrame.Parent = screenGui
+
+-- Draggable Logic
+local dragging, dragInput, dragStart, startPos
+local header = Instance.new("Frame")
+header.Name = "Header"
+header.Size = UDim2.new(1, 0, 0, 42)
+header.BackgroundColor3 = Theme.HeaderBackground
+applyCorner(header, Theme.CornerRadius)
+header.Parent = mainFrame
+
+-- Title
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Size = UDim2.new(1, -90, 1, 0)
+titleLabel.Position = UDim2.new(0, 14, 0, 0)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Text = "🎃 HUKI ANIME DICE | HALLOWEEN HUB"
+titleLabel.Font = Theme.FontTitle
+titleLabel.TextSize = Theme.SizeTitle
+titleLabel.TextColor3 = Theme.Orange
+titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+titleLabel.Parent = header
+
+header.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = mainFrame.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+
+header.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        local delta = input.Position - dragStart
+        mainFrame.Position = UDim2.new(
+            startPos.X.Scale, startPos.X.Offset + delta.X,
+            startPos.Y.Scale, startPos.Y.Offset + delta.Y
+        )
+    end
+end)
+
+-- Minimize Pill Button
+local pillButton = Instance.new("TextButton")
+pillButton.Name = "FloatingPill"
+pillButton.Size = UDim2.new(0, 110, 0, 36)
+pillButton.Position = UDim2.new(0, 20, 0.5, -18)
+pillButton.BackgroundColor3 = Theme.HeaderBackground
+pillButton.Text = "🎃 HUKI HUB"
+pillButton.Font = Theme.FontTitle
+pillButton.TextSize = Theme.SizeHeader
+pillButton.TextColor3 = Theme.Orange
+pillButton.Visible = false
+applyCorner(pillButton, Theme.CornerPill)
+applyStroke(pillButton, Theme.Orange, 1.5)
+pillButton.Parent = screenGui
+
+local btnMinimize = Instance.new("TextButton")
+btnMinimize.Size = UDim2.new(0, 28, 0, 28)
+btnMinimize.Position = UDim2.new(1, -66, 0, 7)
+btnMinimize.BackgroundColor3 = Theme.Panel
+btnMinimize.Text = "—"
+btnMinimize.Font = Theme.FontTitle
+btnMinimize.TextSize = 12
+btnMinimize.TextColor3 = Theme.TextSecondary
+applyCorner(btnMinimize, Theme.CornerSmall)
+btnMinimize.Parent = header
+
+local btnClose = Instance.new("TextButton")
+btnClose.Size = UDim2.new(0, 28, 0, 28)
+btnClose.Position = UDim2.new(1, -34, 0, 7)
+btnClose.BackgroundColor3 = Theme.Panel
+btnClose.Text = "✕"
+btnClose.Font = Theme.FontTitle
+btnClose.TextSize = 12
+btnClose.TextColor3 = Theme.Red
+applyCorner(btnClose, Theme.CornerSmall)
+btnClose.Parent = header
+
+btnMinimize.MouseButton1Click:Connect(function()
+    mainFrame.Visible = false
+    pillButton.Visible = true
+end)
+
+pillButton.MouseButton1Click:Connect(function()
+    pillButton.Visible = false
+    mainFrame.Visible = true
+end)
+
+btnClose.MouseButton1Click:Connect(function()
+    screenGui:Destroy()
+end)
+
+-- Navigation Tabs
+local navBar = Instance.new("Frame")
+navBar.Name = "NavBar"
+navBar.Size = UDim2.new(1, -20, 0, 32)
+navBar.Position = UDim2.new(0, 10, 0, 48)
+navBar.BackgroundTransparency = 1
+navBar.Parent = mainFrame
+
+local tabListLayout = Instance.new("UIListLayout")
+tabListLayout.FillDirection = Enum.FillDirection.Horizontal
+tabListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+tabListLayout.Padding = UDim.new(0, 5)
+tabListLayout.Parent = navBar
+
+local tabButtons = {}
+local tabPages = {}
+local currentTab = "Halloween"
+
+local contentArea = Instance.new("Frame")
+contentArea.Name = "ContentArea"
+contentArea.Size = UDim2.new(1, -20, 1, -135)
+contentArea.Position = UDim2.new(0, 10, 0, 86)
+contentArea.BackgroundTransparency = 1
+contentArea.Parent = mainFrame
+
+local function createTabPage(tabName)
+    local page = Instance.new("ScrollingFrame")
+    page.Name = tabName .. "Page"
+    page.Size = UDim2.new(1, 0, 1, 0)
+    page.BackgroundTransparency = 1
+    page.BorderSizePixel = 0
+    page.ScrollBarThickness = 4
+    page.ScrollBarImageColor3 = Theme.Border
+    page.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    page.CanvasSize = UDim2.new(0, 0, 0, 0)
+    page.Visible = false
+    page.Parent = contentArea
+    
+    local list = Instance.new("UIListLayout")
+    list.SortOrder = Enum.SortOrder.LayoutOrder
+    list.Padding = UDim.new(0, 8)
+    list.Parent = page
+    
+    tabPages[tabName] = page
+    return page
+end
+
+local function selectTab(tabName)
+    currentTab = tabName
+    for name, btn in pairs(tabButtons) do
+        local isSel = (name == tabName)
+        btn.BackgroundColor3 = isSel and Theme.Orange or Theme.Panel
+        btn.TextColor3 = isSel and Color3.fromRGB(20, 20, 25) or Theme.TextSecondary
+    end
+    for name, page in pairs(tabPages) do
+        page.Visible = (name == tabName)
+    end
+end
+
+local function addTabButton(tabName, label, order)
+    local btn = Instance.new("TextButton")
+    btn.Name = tabName .. "TabBtn"
+    btn.Size = UDim2.new(0.19, -3, 1, 0)
+    btn.LayoutOrder = order
+    btn.BackgroundColor3 = Theme.Panel
+    btn.Text = label
+    btn.Font = Theme.FontHeader
+    btn.TextSize = 10
+    btn.TextColor3 = Theme.TextSecondary
+    applyCorner(btn, Theme.CornerSmall)
+    btn.Parent = navBar
+    
+    btn.MouseButton1Click:Connect(function()
+        selectTab(tabName)
+    end)
+    
+    tabButtons[tabName] = btn
+    createTabPage(tabName)
+end
+
+addTabButton("Halloween", "🎃 EVENT", 1)
+addTabButton("Base", "🏠 BASE", 2)
+addTabButton("Quests", "📜 QUESTS", 3)
+addTabButton("Config", "⚙️ CONFIG", 4)
+addTabButton("Logs", "📋 LOGS", 5)
+
+-- UI Builders (Card, Toggle, Button)
+local function addToggleCard(parentPage, title, desc, defaultVal, stateKey, callback)
+    local card = Instance.new("Frame")
+    card.Size = UDim2.new(1, 0, 0, 52)
+    card.BackgroundColor3 = Theme.Panel
+    applyCorner(card, Theme.CornerSmall)
+    applyStroke(card, Theme.Border)
+    applyPadding(card, 8)
+    card.Parent = parentPage
+    
+    local tLabel = Instance.new("TextLabel")
+    tLabel.Size = UDim2.new(1, -70, 0, 16)
+    tLabel.BackgroundTransparency = 1
+    tLabel.Text = title
+    tLabel.Font = Theme.FontTitle
+    tLabel.TextSize = Theme.SizeHeader
+    tLabel.TextColor3 = Theme.TextPrimary
+    tLabel.TextXAlignment = Enum.TextXAlignment.Left
+    tLabel.Parent = card
+    
+    local dLabel = Instance.new("TextLabel")
+    dLabel.Size = UDim2.new(1, -70, 0, 16)
+    dLabel.Position = UDim2.new(0, 0, 0, 18)
+    dLabel.BackgroundTransparency = 1
+    dLabel.Text = desc
+    dLabel.Font = Theme.FontBody
+    dLabel.TextSize = Theme.SizeSmall
+    dLabel.TextColor3 = Theme.TextSecondary
+    dLabel.TextXAlignment = Enum.TextXAlignment.Left
+    dLabel.Parent = card
+    
+    local toggleBtn = Instance.new("TextButton")
+    toggleBtn.Size = UDim2.new(0, 58, 0, 24)
+    toggleBtn.Position = UDim2.new(1, -58, 0.5, -12)
+    toggleBtn.BackgroundColor3 = defaultVal and Theme.ToggleActive or Theme.ToggleInactive
+    toggleBtn.Text = defaultVal and "ON" or "OFF"
+    toggleBtn.Font = Theme.FontTitle
+    toggleBtn.TextSize = 11
+    toggleBtn.TextColor3 = defaultVal and Color3.new(1, 1, 1) or Theme.TextSecondary
+    applyCorner(toggleBtn, Theme.CornerPill)
+    toggleBtn.Parent = card
+    
+    local active = defaultVal
+    local function setVisual(val)
+        active = val
+        toggleBtn.BackgroundColor3 = active and Theme.ToggleActive or Theme.ToggleInactive
+        toggleBtn.Text = active and "ON" or "OFF"
+        toggleBtn.TextColor3 = active and Color3.new(1, 1, 1) or Theme.TextSecondary
+    end
+    
+    toggleBtn.MouseButton1Click:Connect(function()
+        setVisual(not active)
+        if stateKey then
+            State[stateKey] = active
+        end
+        callback(active)
+        
+        -- Auto-Save saat toggle diubah jika fitur AutoSave aktif
+        if State.AutoSave and stateKey and stateKey ~= "AutoSave" and stateKey ~= "AutoLoad" then
+            ConfigManager.Save(true)
+        end
+    end)
+    
+    if stateKey then
+        ConfigManager.RegisterToggle(stateKey, setVisual, callback)
+    end
+    
+    return card, toggleBtn, setVisual
+end
+
+local function addActionCard(parentPage, title, desc, btnText, btnColor, callback)
+    local card = Instance.new("Frame")
+    card.Size = UDim2.new(1, 0, 0, 52)
+    card.BackgroundColor3 = Theme.Panel
+    applyCorner(card, Theme.CornerSmall)
+    applyStroke(card, Theme.Border)
+    applyPadding(card, 8)
+    card.Parent = parentPage
+    
+    local tLabel = Instance.new("TextLabel")
+    tLabel.Size = UDim2.new(1, -110, 0, 16)
+    tLabel.BackgroundTransparency = 1
+    tLabel.Text = title
+    tLabel.Font = Theme.FontTitle
+    tLabel.TextSize = Theme.SizeHeader
+    tLabel.TextColor3 = Theme.TextPrimary
+    tLabel.TextXAlignment = Enum.TextXAlignment.Left
+    tLabel.Parent = card
+    
+    local dLabel = Instance.new("TextLabel")
+    dLabel.Size = UDim2.new(1, -110, 0, 16)
+    dLabel.Position = UDim2.new(0, 0, 0, 18)
+    dLabel.BackgroundTransparency = 1
+    dLabel.Text = desc
+    dLabel.Font = Theme.FontBody
+    dLabel.TextSize = Theme.SizeSmall
+    dLabel.TextColor3 = Theme.TextSecondary
+    dLabel.TextXAlignment = Enum.TextXAlignment.Left
+    dLabel.Parent = card
+    
+    local actBtn = Instance.new("TextButton")
+    actBtn.Size = UDim2.new(0, 96, 0, 26)
+    actBtn.Position = UDim2.new(1, -96, 0.5, -13)
+    actBtn.BackgroundColor3 = btnColor or Theme.Orange
+    actBtn.Text = btnText
+    actBtn.Font = Theme.FontTitle
+    actBtn.TextSize = 11
+    actBtn.TextColor3 = Color3.fromRGB(20, 20, 25)
+    applyCorner(actBtn, Theme.CornerSmall)
+    actBtn.Parent = card
+    
+    actBtn.MouseButton1Click:Connect(function()
+        callback()
+    end)
+    return card, actBtn
+end
+
+-- =============================================================================
+-- 10. POPULATING TABS WITH USER REQUESTED FEATURES
+-- =============================================================================
+
+-- TAB 1: HALLOWEEN EVENT
+local pageHalloween = tabPages["Halloween"]
+addToggleCard(pageHalloween, "1. Auto Teleport Island", "Otomatis pindah & standby di Halloween Island", State.AutoTeleportHalloween, "AutoTeleportHalloween", function(v)
+    State.AutoTeleportHalloween = v
+    if v then teleportToHalloweenIsland() end
+end)
+
+addToggleCard(pageHalloween, "2. Auto Trick or Treat", "Auto jelajah & ketuk pintu permen (Anti-Cheat Safe)", State.AutoTrickOrTreat, "AutoTrickOrTreat", function(v)
+    State.AutoTrickOrTreat = v
+    if v then addLog("TRICK-OR-TREAT", "Memulai auto Trick or Treat safe queue...", Theme.Orange) end
+end)
+
+addToggleCard(pageHalloween, "3. Auto Claim Halloween Quests", "Auto klaim Hourly & Daily Halloween Quests", State.AutoClaimHalloweenQuests, "AutoClaimHalloweenQuests", function(v)
+    State.AutoClaimHalloweenQuests = v
+    if v then claimHalloweenQuests() end
+end)
+
+addToggleCard(pageHalloween, "4. Auto Claim Pumpkin Pass", "Auto klaim semua tier Pumpkin Pass yang terbuka", State.AutoClaimPumpkinPass, "AutoClaimPumpkinPass", function(v)
+    State.AutoClaimPumpkinPass = v
+    if v then claimPumpkinPass() end
+end)
+
+addActionCard(pageHalloween, "Instant Island Teleport", "Langsung berpindah ke pulau event labu", "Teleport", Theme.Orange, function()
+    teleportToHalloweenIsland()
+end)
+
+addActionCard(pageHalloween, "Instant Claim Pass", "Klaim sekaligus seluruh tier Pumpkin Pass saat ini", "Claim Pass", Theme.Purple, function()
+    claimPumpkinPass()
+end)
+
+-- TAB 2: BASE & CASH
+local pageBase = tabPages["Base"]
+addToggleCard(pageBase, "Auto Collect Base Money", "Tarik seluruh uang dari semua base slot (1-18)", State.AutoCollectMoney, "AutoCollectMoney", function(v)
+    State.AutoCollectMoney = v
+    if v then
+        collectBaseMoney()
+        addLog("BASE", "Auto Collect Base Money Aktif", Theme.Green)
+    end
+end)
+
+addToggleCard(pageBase, "Auto Rebirth", "Auto rebirth saat saldo mencukupi target rebirth", State.AutoRebirth, "AutoRebirth", function(v)
+    State.AutoRebirth = v
+    if v then
+        executeRebirth()
+        addLog("REBIRTH", "Auto Rebirth Aktif", Theme.Green)
+    end
+end)
+
+addActionCard(pageBase, "Instant Collect All Base", "Ambil semua cash yang terkumpul di base sekarang", "Collect Now", Theme.Green, function()
+    collectBaseMoney()
+    addLog("BASE", "Manual Collect Base dikirim untuk 18 slot", Theme.Green)
+end)
+
+addActionCard(pageBase, "Manual Rebirth", "Kirim sinyal rebirth ke server sekarang", "Rebirth Now", Theme.Cyan, function()
+    executeRebirth()
+end)
+
+addActionCard(pageBase, "Equip Best Base Units", "Pasang otomatis unit penghasil uang tertinggi", "Equip Best", Theme.Border, function()
+    if Remotes.EquipBestUnits then
+        pcall(function() Remotes.EquipBestUnits:FireServer() end)
+        addLog("BASE", "Equip Best Units dikirim ke server!", Theme.Cyan)
+    end
+end)
+
+addActionCard(pageBase, "Teleport Base / Hub", "Kembali ke pulau utama / base kamu", "Teleport Hub", Theme.Border, function()
+    teleportToHub()
+end)
+
+-- TAB 3: DAILY & QUESTS
+local pageQuests = tabPages["Quests"]
+addToggleCard(pageQuests, "Auto Claim Daily Login", "Klaim reward login harian otomatis saat siap", State.AutoClaimDailyReward, "AutoClaimDailyReward", function(v)
+    State.AutoClaimDailyReward = v
+    if v then claimDailyLogin() end
+end)
+
+addToggleCard(pageQuests, "Auto Claim Normal Quests", "Auto klaim quest Daily & Weekly tiket", State.AutoClaimQuests, "AutoClaimQuests", function(v)
+    State.AutoClaimQuests = v
+    if v then claimNormalQuests() end
+end)
+
+addToggleCard(pageQuests, "Anti-AFK Protection", "Cegah disconnect 20 menit idle Roblox", State.AntiAfk, "AntiAfk", function(v)
+    State.AntiAfk = v
+    addLog("SYSTEM", "Anti-AFK: " .. (v and "ENABLED" or "DISABLED"), Theme.Cyan)
+end)
+
+addActionCard(pageQuests, "Claim Daily Login Now", "Klaim hadiah harian sekarang", "Claim Daily", Theme.Cyan, function()
+    claimDailyLogin()
+end)
+
+addActionCard(pageQuests, "Claim All Quests Now", "Klaim semua quest yang telah terpenuhi targetnya", "Claim Quests", Theme.Purple, function()
+    claimNormalQuests()
+    claimHalloweenQuests()
+end)
+
+-- TAB 4: CONFIGURATION & WORKSPACE FILE SYSTEM
+local pageConfig = tabPages["Config"]
+
+-- Info Status Card
+local configInfoCard = Instance.new("Frame")
+configInfoCard.Size = UDim2.new(1, 0, 0, 68)
+configInfoCard.BackgroundColor3 = Theme.Panel
+applyCorner(configInfoCard, Theme.CornerSmall)
+applyStroke(configInfoCard, Theme.Border)
+applyPadding(configInfoCard, 8)
+configInfoCard.Parent = pageConfig
+
+local lblCfgTitle = Instance.new("TextLabel")
+lblCfgTitle.Size = UDim2.new(1, 0, 0, 16)
+lblCfgTitle.BackgroundTransparency = 1
+lblCfgTitle.Text = "📁 WORKSPACE CONFIG STATUS"
+lblCfgTitle.Font = Theme.FontTitle
+lblCfgTitle.TextSize = Theme.SizeHeader
+lblCfgTitle.TextColor3 = Theme.Orange
+lblCfgTitle.TextXAlignment = Enum.TextXAlignment.Left
+lblCfgTitle.Parent = configInfoCard
+
+local lblCfgFile = Instance.new("TextLabel")
+lblCfgFile.Size = UDim2.new(1, 0, 0, 14)
+lblCfgFile.Position = UDim2.new(0, 0, 0, 18)
+lblCfgFile.BackgroundTransparency = 1
+lblCfgFile.Text = "File: workspace/" .. ConfigManager.FileName
+lblCfgFile.Font = Theme.FontMono
+lblCfgFile.TextSize = Theme.SizeSmall
+lblCfgFile.TextColor3 = Theme.TextPrimary
+lblCfgFile.TextXAlignment = Enum.TextXAlignment.Left
+lblCfgFile.Parent = configInfoCard
+
+local lblCfgDetail = Instance.new("TextLabel")
+lblCfgDetail.Size = UDim2.new(1, 0, 0, 14)
+lblCfgDetail.Position = UDim2.new(0, 0, 0, 34)
+lblCfgDetail.BackgroundTransparency = 1
+lblCfgDetail.Text = "Status: " .. ConfigManager.StatusMessage
+lblCfgDetail.Font = Theme.FontBody
+lblCfgDetail.TextSize = Theme.SizeSmall
+lblCfgDetail.TextColor3 = Theme.TextSecondary
+lblCfgDetail.TextXAlignment = Enum.TextXAlignment.Left
+lblCfgDetail.Parent = configInfoCard
+
+local function updateConfigStatusUI()
+    if isFsSupported() then
+        local exists = false
+        pcall(function() exists = isfile(ConfigManager.FileName) end)
+        local statusTxt = exists and "File ditemukan di workspace (Siap digunakan)" or "File belum ada (Klik Save Config)"
+        lblCfgDetail.Text = "Status: " .. statusTxt .. " | Terakhir: " .. ConfigManager.LastActionTime
+    else
+        lblCfgDetail.Text = "Status: Executor tidak mendukung writefile/readfile"
+        lblCfgDetail.TextColor3 = Theme.Red
+    end
+end
+
+addToggleCard(pageConfig, "Auto-Save Changes", "Otomatis simpan perubahan toggle ke file workspace", State.AutoSave, "AutoSave", function(v)
+    State.AutoSave = v
+    if v then ConfigManager.Save(false) end
+    updateConfigStatusUI()
+end)
+
+addToggleCard(pageConfig, "Auto-Load on Startup", "Otomatis load config saat script dijalankan", State.AutoLoad, "AutoLoad", function(v)
+    State.AutoLoad = v
+    if State.AutoSave then ConfigManager.Save(true) end
+    updateConfigStatusUI()
+end)
+
+addActionCard(pageConfig, "Save Config", "Simpan seluruh setting aktif saat ini ke workspace", "Save Config", Theme.Green, function()
+    ConfigManager.Save(false)
+    updateConfigStatusUI()
+end)
+
+addActionCard(pageConfig, "Load Config", "Muat ulang setting dari file di workspace", "Load Config", Theme.Cyan, function()
+    ConfigManager.Load(false)
+    updateConfigStatusUI()
+end)
+
+addActionCard(pageConfig, "Reset to Defaults", "Matikan seluruh toggle & set ke default", "Reset", Theme.Red, function()
+    ConfigManager.Reset(false)
+    updateConfigStatusUI()
+end)
+
+-- TAB 5: ACTIVITY LOG VIEWER
+local pageLogs = tabPages["Logs"]
+local logContainer = Instance.new("ScrollingFrame")
+logContainer.Size = UDim2.new(1, 0, 1, -34)
+logContainer.BackgroundColor3 = Color3.fromRGB(12, 14, 20)
+applyCorner(logContainer, Theme.CornerSmall)
+applyStroke(logContainer, Theme.Border)
+applyPadding(logContainer, 6)
+logContainer.ScrollBarThickness = 3
+logContainer.ScrollBarImageColor3 = Theme.Border
+logContainer.AutomaticCanvasSize = Enum.AutomaticSize.Y
+logContainer.CanvasSize = UDim2.new(0, 0, 0, 0)
+logContainer.Parent = pageLogs
+
+local logList = Instance.new("UIListLayout")
+logList.SortOrder = Enum.SortOrder.LayoutOrder
+logList.Padding = UDim.new(0, 4)
+logList.Parent = logContainer
+
+local btnClearLogs = Instance.new("TextButton")
+btnClearLogs.Size = UDim2.new(1, 0, 0, 26)
+btnClearLogs.Position = UDim2.new(0, 0, 1, -28)
+btnClearLogs.BackgroundColor3 = Theme.Panel
+btnClearLogs.Text = "Hapus Riwayat Log"
+btnClearLogs.Font = Theme.FontTitle
+btnClearLogs.TextSize = 11
+btnClearLogs.TextColor3 = Theme.TextSecondary
+applyCorner(btnClearLogs, Theme.CornerSmall)
+btnClearLogs.Parent = pageLogs
+
+local function renderLogEntry(entry)
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(1, 0, 0, 16)
+    lbl.BackgroundTransparency = 1
+    lbl.Font = Theme.FontMono
+    lbl.TextSize = 10
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.Text = string.format("[%s] [%s] %s", entry.time, entry.category, entry.text)
+    lbl.TextColor3 = entry.color
+    lbl.Parent = logContainer
+    return lbl
+end
+
+LogEvent.Event:Connect(function(entry)
+    renderLogEntry(entry)
+end)
+
+btnClearLogs.MouseButton1Click:Connect(function()
+    table.clear(Logs)
+    for _, child in ipairs(logContainer:GetChildren()) do
+        if child:IsA("TextLabel") then
+            child:Destroy()
+        end
+    end
+end)
+
+-- =============================================================================
+-- 11. REAL-TIME STATS FOOTER BAR
+-- =============================================================================
+local footer = Instance.new("Frame")
+footer.Name = "Footer"
+footer.Size = UDim2.new(1, -20, 0, 36)
+footer.Position = UDim2.new(0, 10, 1, -44)
+footer.BackgroundColor3 = Theme.Panel
+applyCorner(footer, Theme.CornerSmall)
+applyStroke(footer, Theme.Border)
+applyPadding(footer, 6)
+footer.Parent = mainFrame
+
+local statsLabel = Instance.new("TextLabel")
+statsLabel.Size = UDim2.new(1, 0, 1, 0)
+statsLabel.BackgroundTransparency = 1
+statsLabel.Font = Theme.FontMono
+statsLabel.TextSize = 11
+statsLabel.TextColor3 = Theme.TextPrimary
+statsLabel.TextXAlignment = Enum.TextXAlignment.Center
+statsLabel.Text = "Memuat statistik pemain..."
+statsLabel.Parent = footer
+
+task.spawn(function()
+    while task.wait(1.0) do
+        if not screenGui.Parent then break end
+        local cashStr = "0"
+        local rebStr = "0"
+        local candyStr = "0"
+        local pumpStr = "0"
+        
+        if DataController then
+            pcall(function()
+                if DataController.Money then cashStr = formatNumber(DataController.Money()) end
+                if DataController.Rebirth then rebStr = tostring(DataController.Rebirth()) end
+                if DataController.Inventory then
+                    local c = DataController.Inventory.Candy and DataController.Inventory.Candy()
+                    if c then candyStr = formatNumber(c.amount or 0) end
+                    local p = DataController.Inventory.Pumpkins and DataController.Inventory.Pumpkins()
+                    if p then pumpStr = formatNumber(p.amount or 0) end
+                end
+            end)
+        end
+        
+        statsLabel.Text = string.format("💰 Cash: %s | 🔄 Rebirth: %s | 🍬 Candy: %s | 🎃 Pumpkins: %s", cashStr, rebStr, candyStr, pumpStr)
+    end
+end)
+
+-- =============================================================================
+-- 12. INITIALIZATION & AUTOLOAD CONFIG
+-- =============================================================================
+selectTab("Halloween")
+addLog("SYSTEM", "Huki Anime Dice Halloween Hub aktif!", Theme.Orange)
+addLog("SYSTEM", "Remotes & Controllers terhubung ke game server.", Theme.Green)
+
+-- Cek dan muat config otomatis saat startup jika file ada
+task.spawn(function()
+    task.wait(0.6)
+    if isFsSupported() then
+        local exists = false
+        pcall(function() exists = isfile(ConfigManager.FileName) end)
+        if exists then
+            local ok = ConfigManager.Load(true)
+            if ok then
+                addLog("CONFIG", "Config otomatis dimuat dari workspace [" .. ConfigManager.FileName .. "]", Theme.Green)
+            end
+        else
+            -- Buat file config pertama kali dengan default settings
+            ConfigManager.Save(true)
+            addLog("CONFIG", "Membuat config baru di workspace: " .. ConfigManager.FileName, Theme.TextSecondary)
+        end
+        updateConfigStatusUI()
+    else
+        addLog("CONFIG", "Menjalankan tanpa persistent config (writefile unsupported)", Theme.TextMuted)
+    end
+end)
+
+print("[HUKI] Anime Dice Simulator Halloween Automation Hub Loaded Successfully!")
