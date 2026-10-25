@@ -1,4 +1,3 @@
-
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -392,19 +391,57 @@ function ConfigManager.Reset(silent)
 end
 
 -- =============================================================================
--- 6. ANTI-AFK CONTROLLER
+-- 6. ANTI-AFK CONTROLLER (RUNSERVICE HEARTBEAT 10s PULSE + IDLED FALLBACK)
 -- =============================================================================
 local function setupAntiAfk()
     local vu = nil
+    local vim = nil
     pcall(function() vu = game:GetService("VirtualUser") end)
+    pcall(function() vim = game:GetService("VirtualInputManager") end)
     
-    LocalPlayer.Idled:Connect(function()
-        if State.AntiAfk and vu then
-            vu:CaptureController()
-            vu:ClickButton2(Vector2.new())
-            addLog("ANTI-AFK", "Prevented idle disconnect signal", Theme.Cyan)
+    local lastAfkPulse = tick()
+    
+    -- Heartbeat pulse berkala setiap 10 detik agar tidak AFK
+    RunService.Heartbeat:Connect(function()
+        if not State.AntiAfk then return end
+        
+        local now = tick()
+        if (now - lastAfkPulse) >= 10 then
+            lastAfkPulse = now
+            
+            -- Method 1: VirtualUser Click
+            if vu then
+                pcall(function()
+                    vu:CaptureController()
+                    vu:ClickButton2(Vector2.new(0, 0))
+                end)
+            end
+            
+            -- Method 2: VirtualInputManager key pulse
+            if vim then
+                pcall(function()
+                    vim:SendKeyEvent(true, Enum.KeyCode.F15, false, game)
+                    task.spawn(function()
+                        task.wait(0.05)
+                        vim:SendKeyEvent(false, Enum.KeyCode.F15, false, game)
+                    end)
+                end)
+            end
         end
     end)
+    
+    -- Fallback: Hook ke event Idled jika client mencapai batas idle
+    LocalPlayer.Idled:Connect(function()
+        if State.AntiAfk and vu then
+            pcall(function()
+                vu:CaptureController()
+                vu:ClickButton2(Vector2.new(0, 0))
+                addLog("ANTI-AFK", "Idled hook triggered - input disimulasikan", Theme.Cyan)
+            end)
+        end
+    end)
+    
+    addLog("ANTI-AFK", "Anti-AFK Heartbeat controller (10s pulse) siap", Theme.Cyan)
 end
 setupAntiAfk()
 
@@ -1170,7 +1207,7 @@ addToggleCard(pageQuests, "Auto Claim Normal Quests", "Auto klaim quest Daily & 
     if v then claimNormalQuests() end
 end)
 
-addToggleCard(pageQuests, "Anti-AFK Protection", "Cegah disconnect 20 menit idle Roblox", State.AntiAfk, "AntiAfk", function(v)
+addToggleCard(pageQuests, "Anti-AFK Protection", "Cegah disconnect 20 menit idle (Heartbeat 10s)", State.AntiAfk, "AntiAfk", function(v)
     State.AntiAfk = v
     addLog("SYSTEM", "Anti-AFK: " .. (v and "ENABLED" or "DISABLED"), Theme.Cyan)
 end)
