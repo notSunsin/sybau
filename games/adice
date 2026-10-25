@@ -238,14 +238,14 @@ end
 -- 4. STATE MANAGEMENT & LOGGING
 -- =============================================================================
 local State = {
-    AutoCollectMoney = false,
-    AutoRebirth = false,
-    AutoTeleportHalloween = false,
-    AutoTrickOrTreat = false,
-    AutoClaimHalloweenQuests = false,
-    AutoClaimPumpkinPass = false,
-    AutoClaimDailyReward = false,
-    AutoClaimQuests = false,
+    AutoCollectMoney = true,
+    AutoRebirth = true,
+    AutoTeleportHalloween = true,
+    AutoTrickOrTreat = true,
+    AutoClaimHalloweenQuests = true,
+    AutoClaimPumpkinPass = true,
+    AutoClaimDailyReward = true,
+    AutoClaimQuests = true,
     AntiAfk = true,
     AutoSave = true,
     AutoLoad = true,
