@@ -1,36 +1,3 @@
---[[
-    ═══════════════════════════════════════════════════════════════════════════════
-    HUKI ANIME DICE SIMULATOR - HALLOWEEN AUTOMATION HUB (WITH CONFIG MANAGER)
-    Target Game: Anime Dice Simulator (animedicehal_786)
-    Architecture: Native Luau, Anti-Cheat Safe, Client-Verified Remote Dispatcher
-    Compatible with: Potassium / Solara / Wave / Synapse / Native LocalScript (PC & Mobile)
-    
-    Fitur Utama:
-    1. Base & Economy:
-       - Auto Collect Money (Otomatis klaim seluruh balance dari base slot 1-18)
-       - Auto Rebirth (Auto cek saldo & upgrade rebirth secara konsisten)
-       - Equip Best Base Units (Auto pasang unit terbaik ke base)
-    2. Event Halloween:
-       - Auto Teleport to Halloween Island (Instant & auto-maintain di pulau event)
-       - Auto Trick or Treat (Safe noclip glide, door cooldown tracking, anti-cheat safe)
-       - Auto Claim Halloween Quests (Hourly & Daily quest auto-detect & claim)
-       - Auto Claim Pumpkin Pass (Klaim seluruh hadiah pass labu sekali klik / otomatis)
-    3. Daily & Quests:
-       - Auto Claim Daily Login (Klaim reward harian saat cooldown selesai)
-       - Auto Claim Quests (Klaim Daily & Weekly quests secara real-time)
-    4. Workspace Config Management:
-       - Save Config ke file workspace (HUKI_AnimeDice_Config.json)
-       - Load Config manual kapan saja
-       - Auto-Load Config saat script dijalankan (Auto-restore settings)
-       - Auto-Save Config otomatis saat pengguna mengubah toggle
-       - Reset to default settings
-    5. Utilities & Diagnostics:
-       - Anti-AFK (Cegah disconnect 20 menit)
-       - Live Economy & Event Stats (Money, Rebirth, Candy, Pumpkins)
-       - Central Real-Time Activity Log Viewer
-       - Draggable Responsive Dark/Halloween UI + Floating Minimize Pill
-    ═══════════════════════════════════════════════════════════════════════════════
-]]
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
